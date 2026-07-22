@@ -3,6 +3,9 @@ dist/
 build/
 .env
 .env.local
+.env.vps
+.env.production
+cred
 *.log
 .DS_Store
 coverage/
