@@ -73,9 +73,46 @@ export function AgentInstallModal({ open, onOpenChange, sites }: AgentInstallMod
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const downloadFile = (url: string, label: string) => {
-    window.open(url, '_blank');
-    toast({ title: 'Download iniciado', description: label });
+  const downloadFile = async (url: string, label: string) => {
+    try {
+      // Em production a API rejeita ?token=; Bearer com o agentToken da URL funciona.
+      const parsed = new URL(url, window.location.origin);
+      const agentToken = parsed.searchParams.get('token');
+      const headers: HeadersInit = {};
+      if (agentToken) {
+        headers.Authorization = `Bearer ${agentToken}`;
+        parsed.searchParams.delete('token');
+      }
+
+      const res = await fetch(parsed.toString(), { headers });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) msg = body.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = label.includes('.bat') ? 'NexaOpsAgent-install.bat' : 'NexaOpsAgent.msi';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: 'Download iniciado', description: label });
+    } catch (err) {
+      toast({
+        title: 'Falha no download',
+        description: (err as Error).message,
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
