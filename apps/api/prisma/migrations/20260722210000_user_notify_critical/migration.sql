@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `notifyCriticalAlerts` BOOLEAN NOT NULL DEFAULT true;
