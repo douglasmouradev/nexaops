@@ -1,0 +1,822 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Multi-tenant & Auth ─────────────────────────────────────────────────────
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  referralCode    String   @unique @default(cuid())
+  agentToken      String   @unique @default(cuid())
+  portalToken     String   @unique @default(cuid())
+  billingEmail    String?
+  plan            String   @default("trial")
+  maxDevices      Int?     // null = ilimitado; override do plan
+  aiCredits       Int      @default(100)
+  alertWebhookUrl String?  @db.Text
+  agentMinVersion String?
+  requireTwoFactor Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users               User[]
+  sites               Site[]
+  devices             Device[]
+  alerts              Alert[]
+  alertRules          AlertRule[]
+  tickets             Ticket[]
+  scripts             Script[]
+  automationProfiles  AutomationProfile[]
+  scriptExecutions    ScriptExecution[]
+  patches             Patch[]
+  thresholdProfiles   ThresholdProfile[]
+  passwordVaults      PasswordVault[]
+  knowledgeArticles   KnowledgeArticle[]
+  referrals           Referral[]
+  integrations        Integration[]
+  auditLogs           AuditLog[]
+  networkScans        NetworkScan[]
+  assets              Asset[]
+  aiFeatureToggles    AiFeatureToggle[]
+  aiUsageLogs         AiUsageLog[]
+  invitations         Invitation[]
+  contracts           Contract[]
+  remoteSessions      RemoteSession[]
+  timeEntries         TimeEntry[]
+  invoices            Invoice[]
+}
+
+enum UserRole {
+  ADMIN
+  TECHNICIAN
+  READ_ONLY
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  name              String
+  role              UserRole  @default(TECHNICIAN)
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  avatarUrl         String?
+  notifyCriticalAlerts Boolean @default(true)
+  notifyAlertSeverities String @default("CRITICAL") // CSV: CRITICAL,WARNING,INFO
+  allowedSiteIds    Json      @default("[]") // [] = todos os sites; TECHNICIAN pode restringir
+  organizationId    String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  refreshTokens     RefreshToken[]
+  assignedTickets   Ticket[]        @relation("AssignedTickets")
+  createdTickets    Ticket[]        @relation("CreatedTickets")
+  ticketComments    TicketComment[]
+  auditLogs         AuditLog[]
+  favoriteDevices   Device[]        @relation("FavoriteDevices")
+  remoteSessions    RemoteSession[]
+  timeEntries       TimeEntry[]
+  scriptExecutionsRequested ScriptExecution[] @relation("ScriptExecutionRequester")
+  scriptExecutionsApproved  ScriptExecution[] @relation("ScriptExecutionApprover")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique @db.VarChar(512)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  name           String
+  role           UserRole @default(TECHNICIAN)
+  token          String   @unique @default(cuid())
+  organizationId String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([email, organizationId])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+// ─── Sites / CRM ─────────────────────────────────────────────────────────────
+
+model Site {
+  id             String   @id @default(cuid())
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  zipCode        String?
+  phone          String?
+  email          String?
+  notes          String?  @db.Text
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  devices        Device[]
+  tickets        Ticket[]
+  passwordVaults PasswordVault[]
+  networkScans   NetworkScan[]
+  contracts      Contract[]
+}
+
+model Contract {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?   @db.Text
+  startDate      DateTime
+  endDate        DateTime?
+  value          Float?
+  currency       String    @default("BRL")
+  status         String    @default("ACTIVE")
+  siteId         String
+  organizationId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, siteId])
+}
+
+model PasswordVault {
+  id             String   @id @default(cuid())
+  label          String
+  username       String?
+  encryptedPassword String @db.Text
+  url            String?
+  notes          String?  @db.Text
+  siteId         String
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Devices / RMM ───────────────────────────────────────────────────────────
+
+enum DeviceType {
+  PC
+  SERVER
+  MOBILE
+  NETWORK
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+}
+
+enum OSType {
+  WINDOWS
+  MACOS
+  LINUX
+}
+
+model Device {
+  id              String       @id @default(cuid())
+  name            String
+  hostname        String?
+  type            DeviceType   @default(PC)
+  status          DeviceStatus @default(UNKNOWN)
+  osType          OSType?
+  osVersion       String?
+  folder          String?
+  tags            Json         @default("[]")
+  lastUserLogin   String?
+  lastSeenAt      DateTime?
+  isFavorite      Boolean      @default(false)
+  rebootPending   Boolean      @default(false)
+  patchesAvailable Int         @default(0)
+  siteId          String?
+  organizationId  String
+  thresholdProfileId String?
+  agentId         String?      @unique
+  agentAuthToken  String?      @unique
+  agentVersion    String?
+  meshNodeId      String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site               Site?             @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  thresholdProfile   ThresholdProfile? @relation(fields: [thresholdProfileId], references: [id], onDelete: SetNull)
+  alerts             Alert[]
+  tickets            Ticket[]
+  patches            Patch[]
+  scriptExecutions   ScriptExecution[]
+  remoteSessions     RemoteSession[]
+  hardwareInfo       HardwareInfo?
+  softwareItems      SoftwareItem[]
+  resourceMetrics    ResourceMetric[]
+  networkInterfaces  DeviceNetworkInterface[]
+  favoritedBy        User[]            @relation("FavoriteDevices")
+
+  @@index([organizationId, status])
+  @@index([organizationId, siteId])
+  @@index([organizationId, updatedAt])
+  @@index([organizationId, patchesAvailable])
+}
+
+model HardwareInfo {
+  id           String  @id @default(cuid())
+  deviceId     String  @unique
+  cpuModel     String?
+  cpuCores     Int?
+  ramTotalGb   Float?
+  diskTotalGb  Float?
+  diskFreeGb   Float?
+  manufacturer String?
+  model        String?
+  serialNumber String?
+  warrantyEnd  DateTime?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model SoftwareItem {
+  id          String   @id @default(cuid())
+  deviceId    String
+  name        String
+  version     String?
+  publisher   String?
+  installDate DateTime?
+  createdAt   DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model ResourceMetric {
+  id         String   @id @default(cuid())
+  deviceId   String
+  cpuPercent Float
+  ramPercent Float
+  diskPercent Float
+  recordedAt DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, recordedAt])
+}
+
+model DeviceNetworkInterface {
+  id         String   @id @default(cuid())
+  deviceId   String
+  name       String
+  mac        String?
+  ipv4       String?
+  ipv6       String?
+  netmask    String?
+  cidr       String?
+  internal   Boolean  @default(false)
+  isUp       Boolean  @default(true)
+  speedMbps  Int?
+  dhcp       Boolean?
+  gateway    String?
+  dns        String?  @db.Text
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, name])
+  @@index([deviceId])
+}
+
+model RemoteSession {
+  id                String    @id @default(cuid())
+  deviceId          String
+  userId            String
+  organizationId    String
+  status            String    @default("PENDING")
+  provider          String    @default("rdp")
+  connectionUrl     String?   @db.Text
+  connectionCommand String?   @db.Text
+  auditEvents       Json      @default("[]")
+  startedAt         DateTime  @default(now())
+  endedAt           DateTime?
+  connectedAt       DateTime?
+
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([deviceId, status])
+}
+
+// ─── Alerts ──────────────────────────────────────────────────────────────────
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum AlertStatus {
+  NEW
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model AlertRule {
+  id              String        @id @default(cuid())
+  name            String
+  metric          String
+  threshold       Float?
+  durationMinutes Int?
+  severity        AlertSeverity @default(WARNING)
+  enabled         Boolean       @default(true)
+  organizationId  String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Alert {
+  id             String        @id @default(cuid())
+  title          String
+  message        String        @db.Text
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus   @default(NEW)
+  metric         String?
+  value          Float?
+  deviceId       String?
+  organizationId String
+  ticketId       String?       @unique
+  /** Chave de dedupe enquanto aberto (NEW/ACKNOWLEDGED); null quando RESOLVED */
+  openKey        String?       @unique
+  createdAt      DateTime      @default(now())
+  resolvedAt     DateTime?
+
+  device       Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, severity])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, deviceId])
+}
+
+// ─── Tickets / PSA ───────────────────────────────────────────────────────────
+
+enum TicketStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Ticket {
+  id             String         @id @default(cuid())
+  number         Int
+  title          String
+  description    String?        @db.Text
+  status         TicketStatus   @default(OPEN)
+  priority       TicketPriority @default(MEDIUM)
+  slaDeadline    DateTime?
+  slaBreached    Boolean        @default(false)
+  siteId         String?
+  deviceId       String?
+  assigneeId     String?
+  creatorId      String
+  organizationId String
+  contactEmail   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  resolvedAt     DateTime?
+
+  site         Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  device       Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  assignee     User?           @relation("AssignedTickets", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator      User            @relation("CreatedTickets", fields: [creatorId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  comments     TicketComment[]
+  attachments  TicketAttachment[]
+  alert        Alert?
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, contactEmail])
+}
+
+model TicketAttachment {
+  id          String   @id @default(cuid())
+  ticketId    String
+  fileName    String
+  contentType String?
+  sizeBytes   Int?
+  /** Conteúdo base64 (fallback se S3 não configurado) */
+  dataBase64  String?  @db.LongText
+  /** Chave no object storage (S3/MinIO) */
+  storageKey  String?
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+enum CommentType {
+  INTERNAL
+  CUSTOMER
+}
+
+model TicketComment {
+  id        String      @id @default(cuid())
+  content   String      @db.Text
+  type      CommentType @default(INTERNAL)
+  ticketId  String
+  authorId  String
+  createdAt DateTime    @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+}
+
+// ─── Scripts & Automation ────────────────────────────────────────────────────
+
+enum ScriptLanguage {
+  POWERSHELL
+  BASH
+}
+
+model Script {
+  id               String         @id @default(cuid())
+  name             String
+  description      String?        @db.Text
+  language         ScriptLanguage @default(POWERSHELL)
+  content          String         @db.LongText
+  category         String?
+  requiresApproval Boolean        @default(false)
+  organizationId   String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  executions   ScriptExecution[]
+  automations  AutomationProfile[]
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model ScriptExecution {
+  id             String          @id @default(cuid())
+  scriptId       String
+  deviceId       String
+  status         ExecutionStatus @default(PENDING)
+  output         String?         @db.LongText
+  awaitingApproval Boolean       @default(false)
+  requestedById  String?
+  approvedById   String?
+  approvedAt     DateTime?
+  startedAt      DateTime        @default(now())
+  completedAt    DateTime?
+  organizationId String
+
+  script       Script       @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("ScriptExecutionRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedBy   User?        @relation("ScriptExecutionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, awaitingApproval])
+  @@index([organizationId, startedAt])
+}
+
+model AutomationProfile {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?  @db.Text
+  trigger        String
+  triggerConfig  Json?
+  action         String
+  actionConfig   Json?
+  scriptId       String?
+  enabled        Boolean  @default(true)
+  lastRunAt      DateTime?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  script       Script?      @relation(fields: [scriptId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, enabled])
+}
+
+// ─── Patch Management ────────────────────────────────────────────────────────
+
+enum PatchStatus {
+  PENDING
+  SCHEDULED
+  INSTALLED
+  FAILED
+}
+
+model Patch {
+  id             String      @id @default(cuid())
+  title          String
+  kbId           String?
+  severity       String?
+  status         PatchStatus @default(PENDING)
+  scheduledAt    DateTime?
+  installedAt    DateTime?
+  deviceId       String
+  organizationId String
+  createdAt      DateTime    @default(now())
+
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, deviceId])
+}
+
+// ─── Threshold Profiles ──────────────────────────────────────────────────────
+
+model ThresholdProfile {
+  id             String   @id @default(cuid())
+  name           String
+  cpuThreshold   Float?
+  ramThreshold   Float?
+  diskThreshold  Float?
+  offlineMinutes Int?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  devices      Device[]
+}
+
+// ─── Asset Inventory ─────────────────────────────────────────────────────────
+
+enum AssetType {
+  HARDWARE
+  SOFTWARE
+  LICENSE
+}
+
+model Asset {
+  id             String    @id @default(cuid())
+  name           String
+  type           AssetType @default(HARDWARE)
+  manufacturer   String?
+  model          String?
+  serialNumber   String?
+  purchaseDate   DateTime?
+  warrantyEnd    DateTime?
+  licenseKey     String?
+  siteId         String?
+  organizationId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Network Discovery ───────────────────────────────────────────────────────
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model NetworkScan {
+  id              String     @id @default(cuid())
+  name            String
+  subnet          String
+  status          ScanStatus @default(PENDING)
+  devicesFound    Int        @default(0)
+  mode            String     @default("api") // api | agent
+  scannerDeviceId String?
+  siteId          String?
+  organizationId  String
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+
+  site              Site?             @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  discoveredDevices DiscoveredDevice[]
+}
+
+model DiscoveredDevice {
+  id           String   @id @default(cuid())
+  ipAddress    String
+  hostname     String?
+  macAddress   String?
+  deviceType   String?
+  promoted     Boolean  @default(false)
+  scanId       String
+  createdAt    DateTime @default(now())
+
+  scan NetworkScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+}
+
+// ─── Knowledge Base ──────────────────────────────────────────────────────────
+
+enum ArticleVisibility {
+  INTERNAL
+  PUBLIC
+}
+
+model KnowledgeArticle {
+  id             String            @id @default(cuid())
+  title          String
+  content        String            @db.LongText
+  category       String?
+  visibility     ArticleVisibility @default(INTERNAL)
+  tags           Json              @default("[]")
+  organizationId String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Referrals ─────────────────────────────────────────────────────────────────
+
+enum ReferralStatus {
+  SENT
+  REGISTERED
+  CONVERTED
+}
+
+model Referral {
+  id             String         @id @default(cuid())
+  email          String
+  status         ReferralStatus @default(SENT)
+  organizationId String
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Integrations & AI ───────────────────────────────────────────────────────
+
+model Integration {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String
+  connected      Boolean  @default(false)
+  config         Json?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([slug, organizationId])
+}
+
+model AiFeatureToggle {
+  id             String  @id @default(cuid())
+  feature        String
+  enabled        Boolean @default(true)
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([feature, organizationId])
+}
+
+model AiUsageLog {
+  id             String   @id @default(cuid())
+  feature        String
+  credits        Int      @default(1)
+  details        String?  @db.Text
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Audit ───────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  action         String
+  entity         String
+  entityId       String?
+  details        Json?
+  userId         String?
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+// ─── PSA Billing ─────────────────────────────────────────────────────────────
+
+model TimeEntry {
+  id             String   @id @default(cuid())
+  description    String   @db.Text
+  hours          Float
+  billable       Boolean  @default(true)
+  hourlyRate     Float?
+  workedAt       DateTime @default(now())
+  ticketId       String?
+  siteId         String?
+  userId         String
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, workedAt])
+  @@index([organizationId, userId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  number         Int
+  status         String   @default("DRAFT") // DRAFT | SENT | PAID | VOID
+  currency       String   @default("BRL")
+  total          Float    @default(0)
+  notes          String?  @db.Text
+  siteId         String?
+  dueDate        DateTime?
+  issuedAt       DateTime?
+  paidAt         DateTime?
+  stripeSessionId String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines        InvoiceLine[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+}
+
+model InvoiceLine {
+  id          String @id @default(cuid())
+  description String
+  quantity    Float  @default(1)
+  unitPrice   Float
+  amount      Float
+  invoiceId   String
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}

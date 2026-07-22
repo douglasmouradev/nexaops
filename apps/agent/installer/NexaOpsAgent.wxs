@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <?define ProductVersion="0.2.0.0" ?>
+  <?define UpgradeCode="B7E4A1C2-3D5F-4E89-9A0B-1C2D3E4F5A6B" ?>
+
+  <Product
+    Id="*"
+    Name="NexaOps Agent"
+    Language="1046"
+    Version="$(var.ProductVersion)"
+    Manufacturer="NexaOps"
+    UpgradeCode="$(var.UpgradeCode)">
+
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+      Description="Agente de monitoramento RMM NexaOps para Windows"
+      Comments="Monitora CPU, RAM, disco e interfaces de rede" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="Uma versao mais recente do NexaOps Agent ja esta instalada."
+      AllowSameVersionUpgrades="yes" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Propriedades passadas via linha de comando: msiexec /i NexaOpsAgent.msi TOKEN=xxx API_URL=xxx -->
+    <Property Id="TOKEN" Secure="yes" />
+    <Property Id="API_URL" Value="http://localhost:3001" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="NexaOps Agent" />
+      </Directory>
+    </Directory>
+
+    <Feature Id="MainFeature" Title="NexaOps Agent" Level="1">
+      <ComponentGroupRef Id="AgentFiles" />
+    </Feature>
+
+    <!-- Instalação: registra serviço Windows -->
+    <CustomAction
+      Id="SetInstallCmd"
+      Property="InstallService"
+      Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -File &quot;[INSTALLFOLDER]windows\install.ps1&quot; -InstallFolder &quot;[INSTALLFOLDER]&quot; -Token &quot;[TOKEN]&quot; -ApiUrl &quot;[API_URL]&quot;"
+      Execute="immediate" />
+
+    <CustomAction
+      Id="InstallService"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Return="check"
+      Impersonate="no" />
+
+    <!-- Desinstalação: remove serviço -->
+    <CustomAction
+      Id="SetUninstallCmd"
+      Property="UninstallService"
+      Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -File &quot;[INSTALLFOLDER]windows\uninstall.ps1&quot;"
+      Execute="immediate" />
+
+    <CustomAction
+      Id="UninstallService"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetInstallCmd" Before="InstallService" />
+      <Custom Action="InstallService" After="InstallFiles">NOT Installed AND TOKEN</Custom>
+      <Custom Action="SetUninstallCmd" Before="UninstallService" />
+      <Custom Action="UninstallService" Before="RemoveFiles">REMOVE="ALL"</Custom>
+    </InstallExecuteSequence>
+
+  </Product>
+</Wix>

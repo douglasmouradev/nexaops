@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: nexaops
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/nexaops
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: ci-jwt-secret-abcdefghijklmnopqrstuvwxyz12
+      JWT_REFRESH_SECRET: ci-refresh-secret-abcdefghijklmnopqrstuv
+      VAULT_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef"
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @nexaops/shared
+      - run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+        working-directory: .
+      - run: npm run test -w @nexaops/api
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @nexaops/shared
+      - run: npm run build -w @nexaops/web
+      - run: npm run test -w @nexaops/web --if-present
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: nexaops
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/nexaops
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: ci-jwt-secret-abcdefghijklmnopqrstuvwxyz12
+      JWT_REFRESH_SECRET: ci-refresh-secret-abcdefghijklmnopqrstuv
+      VAULT_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef"
+      NODE_ENV: development
+      API_PORT: 3001
+      API_URL: http://127.0.0.1:3001
+      CORS_ORIGIN: http://127.0.0.1:4173
+      E2E_API_URL: http://127.0.0.1:3001/health
+      E2E_BASE_URL: http://127.0.0.1:4173
+      E2E_SKIP_WEBSERVER: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @nexaops/shared
+      - run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - run: npm run db:seed -w @nexaops/api
+      - run: npm run build -w @nexaops/api
+      - run: npm run build -w @nexaops/web
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Start API + preview
+        run: |
+          npm run start -w @nexaops/api &
+          npx --yes wait-on http://127.0.0.1:3001/health -t 90000
+          npm run preview -w @nexaops/web -- --host 127.0.0.1 --port 4173 &
+          npx --yes wait-on http://127.0.0.1:4173 -t 60000
+      - name: E2E smoke
+        run: npm run test:e2e -w @nexaops/web

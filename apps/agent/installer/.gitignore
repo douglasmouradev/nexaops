@@ -1,0 +1,5 @@
+staging/
+obj/
+dist/
+Files.wxs
+tools/

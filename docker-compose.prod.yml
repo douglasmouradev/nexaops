@@ -1,0 +1,54 @@
+# Produção — não publica MySQL/Redis; exige NODE_ENV=production e Redis/SMTP.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  mysql:
+    ports: []
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina MYSQL_ROOT_PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?defina MYSQL_PASSWORD}
+
+  redis:
+    ports: []
+    command: ['redis-server', '--appendonly', 'yes']
+
+  api:
+    environment:
+      NODE_ENV: production
+      REDIS_REQUIRED: 'true'
+      SMTP_REQUIRED: 'true'
+      DATABASE_URL: mysql://${MYSQL_USER:-nexaops}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-nexaops}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?defina JWT_REFRESH_SECRET}
+      VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:?defina VAULT_ENCRYPTION_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN:?defina CORS_ORIGIN}
+      API_URL: ${API_URL:?defina API_URL}
+      SMTP_HOST: ${SMTP_HOST:?defina SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@nexaops.local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-nexaops}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AUTO_TICKET_ON_CRITICAL: ${AUTO_TICKET_ON_CRITICAL:-true}
+      REMOTE_PROVIDER: ${REMOTE_PROVIDER:-guacamole}
+      REMOTE_URL_TTL_SEC: ${REMOTE_URL_TTL_SEC:-3600}
+      GUACAMOLE_URL: ${GUACAMOLE_URL:-}
+      MESHCENTRAL_URL: ${MESHCENTRAL_URL:-}
+      NOVNC_URL: ${NOVNC_URL:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    ports:
+      - '127.0.0.1:${API_PORT:-3001}:3001'
+
+  web:
+    ports:
+      - '127.0.0.1:${WEB_PORT:-5173}:80'
+    environment:
+      # build-time VITE_API_URL deve ser a URL pública; rebuild image após mudar
+      VITE_API_URL: ${VITE_API_URL:-}

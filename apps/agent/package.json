@@ -1,0 +1,13 @@
+{
+  "name": "@nexaops/agent",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Agente NexaOps RMM para monitoramento de equipamentos",
+  "scripts": {
+    "start": "node index.js",
+    "build:msi": "powershell -ExecutionPolicy Bypass -File installer/build-msi.ps1"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
