@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
-  <?define ProductVersion="0.3.4.0" ?>
+  <?define ProductVersion="0.3.5.0" ?>
   <?define UpgradeCode="B7E4A1C2-3D5F-4E89-9A0B-1C2D3E4F5A6B" ?>
 
   <!-- Defaults injetados no build (build-msi.ps1 -dBakeToken / -dBakeApiUrl).
@@ -49,10 +49,11 @@
       <ComponentGroupRef Id="AgentFiles" />
     </Feature>
 
+    <!-- Setup via node.exe embutido (sem PowerShell/ExecutionPolicy/encoding) -->
     <CustomAction
       Id="SetInstallCmd"
       Property="InstallService"
-      Value="&quot;[INSTALLFOLDER]windows\install.cmd&quot; &quot;[INSTALLFOLDER]&quot; &quot;[TOKEN]&quot; &quot;[API_URL]&quot;"
+      Value="&quot;[INSTALLFOLDER]node.exe&quot; &quot;[INSTALLFOLDER]windows\setup.js&quot; &quot;[TOKEN]&quot; &quot;[API_URL]&quot;"
       Execute="immediate" />
 
     <CustomAction
