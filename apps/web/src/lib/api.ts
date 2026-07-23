@@ -63,10 +63,20 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
-    let response = await fetch(this.buildUrl(path, params), {
-      ...fetchOptions,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(this.buildUrl(path, params), {
+        ...fetchOptions,
+        headers,
+      });
+    } catch {
+      const bakedLocal = API_URL && /localhost|127\.0\.0\.1/.test(API_URL);
+      throw new Error(
+        bakedLocal
+          ? 'Build do web apontando para localhost. Na VPS: unset VITE_API_URL && npm run build -w @nexaops/web'
+          : 'API indisponível (rede/proxy). Na VPS: curl -s http://127.0.0.1:3001/health && pm2 logs nexaops-api'
+      );
+    }
 
     if (response.status === 401 && this.refreshToken && !isAuthEndpoint) {
       const refreshed = await this.tryRefresh();
@@ -84,8 +94,8 @@ class ApiClient {
       const errMsg =
         data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
           ? (data as { error: string }).error
-          : response.status === 0 || response.status >= 500
-            ? 'API indisponível. Verifique se o backend está rodando na porta 3001.'
+          : response.status >= 500
+            ? `API com erro ${response.status}. Verifique: pm2 status / pm2 logs nexaops-api`
             : 'Erro na requisição';
       throw new Error(errMsg);
     }
