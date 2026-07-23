@@ -183,15 +183,24 @@ export function DevicesPage() {
   });
 
   const bulkAction = useMutation({
-    mutationFn: (body: { action: string; payload?: Record<string, string> }) =>
-      api.post('/api/devices/bulk-action', {
+    mutationFn: async (body: { action: string; payload?: Record<string, string> }) => {
+      if (body.action === 'DELETE') {
+        // DELETE individual — funciona mesmo se o schema bulk antigo nao tiver DELETE
+        const ids = [...selectedIds];
+        for (const id of ids) {
+          await api.delete(`/api/devices/${id}`);
+        }
+        return { action: 'DELETE', count: ids.length };
+      }
+      return api.post('/api/devices/bulk-action', {
         deviceIds: selectedIds,
         action: body.action,
         payload: body.payload,
-      }),
+      });
+    },
     onSuccess: (_res, vars) => {
       toast({
-        title: vars.action === 'DELETE' ? 'Dispositivos excluídos' : 'Ação em lote executada',
+        title: vars.action === 'DELETE' ? 'Dispositivos apagados' : 'Ação em lote executada',
       });
       clearSelection();
       setBulkDialog(null);
@@ -252,6 +261,27 @@ export function DevicesPage() {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/50 p-3">
           <span className="text-sm font-medium">{selectedIds.length} selecionado(s)</span>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="gap-1"
+              disabled={bulkAction.isPending}
+              onClick={() => {
+                const n = selectedIds.length;
+                if (
+                  !window.confirm(
+                    `Apagar ${n} dispositivo(s) selecionado(s) do painel?\n\nEsta ação não pode ser desfeita.`
+                  )
+                ) {
+                  return;
+                }
+                bulkAction.mutate({ action: 'DELETE' });
+              }}
+            >
+              <Trash2 className="h-3 w-3" />
+              {bulkAction.isPending ? 'Apagando…' : 'Apagar selecionados'}
+            </Button>
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setBulkDialog('RUN_SCRIPT')}>
               <Play className="h-3 w-3" /> Executar script
             </Button>
@@ -275,24 +305,15 @@ export function DevicesPage() {
               <Gauge className="h-3 w-3" /> Atribuir perfil de limite
             </Button>
             <Button
-              variant="destructive"
-              size="sm"
-              className="gap-1"
-              onClick={() => setBulkDialog('DELETE')}
-            >
-              <Trash2 className="h-3 w-3" /> Excluir
-            </Button>
-            <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
                 clearSelection();
               }}
             >
-              Limpar seleção
+              Desmarcar
             </Button>
           </div>
         </div>
