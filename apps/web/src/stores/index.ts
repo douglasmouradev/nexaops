@@ -81,7 +81,7 @@ export const useSidebarStore = create<SidebarState>((set) => ({
 }));
 
 interface DeviceSelectionState {
-  selectedIds: Set<string>;
+  selectedIds: string[];
   toggle: (id: string) => void;
   selectAll: (ids: string[]) => void;
   clear: () => void;
@@ -89,15 +89,14 @@ interface DeviceSelectionState {
 }
 
 export const useDeviceSelection = create<DeviceSelectionState>((set, get) => ({
-  selectedIds: new Set(),
+  selectedIds: [],
   toggle: (id) =>
-    set((s) => {
-      const next = new Set(s.selectedIds);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return { selectedIds: next };
-    }),
-  selectAll: (ids) => set({ selectedIds: new Set(ids) }),
-  clear: () => set({ selectedIds: new Set() }),
-  isSelected: (id) => get().selectedIds.has(id),
+    set((s) => ({
+      selectedIds: s.selectedIds.includes(id)
+        ? s.selectedIds.filter((x) => x !== id)
+        : [...s.selectedIds, id],
+    })),
+  selectAll: (ids) => set({ selectedIds: [...ids] }),
+  clear: () => set({ selectedIds: [] }),
+  isSelected: (id) => get().selectedIds.includes(id),
 }));

@@ -180,7 +180,7 @@ export function DevicesPage() {
   const bulkAction = useMutation({
     mutationFn: (body: { action: string; payload?: Record<string, string> }) =>
       api.post('/api/devices/bulk-action', {
-        deviceIds: Array.from(selectedIds),
+        deviceIds: selectedIds,
         action: body.action,
         payload: body.payload,
       }),
@@ -243,9 +243,9 @@ export function DevicesPage() {
         </div>
       </div>
 
-      {canWrite && selectedIds.size > 0 && (
+      {canWrite && selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/50 p-3">
-          <span className="text-sm font-medium">{selectedIds.size} selecionado(s)</span>
+          <span className="text-sm font-medium">{selectedIds.length} selecionado(s)</span>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setBulkDialog('RUN_SCRIPT')}>
               <Play className="h-3 w-3" /> Executar script
@@ -277,8 +277,13 @@ export function DevicesPage() {
             >
               <Trash2 className="h-3 w-3" /> Excluir
             </Button>
-            <Button variant="ghost" size="sm" onClick={clear}>
-              Limpar
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => clear()}
+            >
+              Limpar seleção
             </Button>
           </div>
         </div>
@@ -576,7 +581,7 @@ export function DevicesPage() {
       <Dialog open={bulkDialog === 'RUN_SCRIPT'} onOpenChange={(o) => !o && setBulkDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Executar script em {selectedIds.size} dispositivo(s)</DialogTitle>
+            <DialogTitle>Executar script em {selectedIds.length} dispositivo(s)</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <Select value={selectedScriptId} onValueChange={setSelectedScriptId}>
@@ -637,7 +642,7 @@ export function DevicesPage() {
       <Dialog open={bulkDialog === 'DELETE'} onOpenChange={(o) => !o && setBulkDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir {selectedIds.size} dispositivo(s)</DialogTitle>
+            <DialogTitle>Excluir {selectedIds.length} dispositivo(s)</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Os dispositivos selecionados serão removidos do painel. O agente no PC deixa de
