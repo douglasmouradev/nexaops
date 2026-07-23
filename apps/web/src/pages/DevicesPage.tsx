@@ -41,7 +41,6 @@ import {
 } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { formatRelative } from '@/lib/utils';
-import { useDeviceSelection } from '@/stores';
 import { useToast } from '@/hooks/use-toast';
 import { useCanWrite } from '@/hooks/use-permissions';
 import { AgentInstallModal } from '@/components/devices/AgentInstallModal';
@@ -108,7 +107,13 @@ export function DevicesPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const canWrite = useCanWrite();
-  const { selectedIds, toggle, selectAll, clear, isSelected } = useDeviceSelection();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const clearSelection = () => setSelectedIds([]);
+  const toggleSelection = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const selectAllVisible = (ids: string[]) => setSelectedIds([...ids]);
+  const isSelected = (id: string) => selectedIds.includes(id);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['devices', search, nlFilter, siteFilter, statusFilter, typeFilter, favoritesOnly, page],
@@ -188,7 +193,7 @@ export function DevicesPage() {
       toast({
         title: vars.action === 'DELETE' ? 'Dispositivos excluídos' : 'Ação em lote executada',
       });
-      clear();
+      clearSelection();
       setBulkDialog(null);
       setSelectedScriptId('');
       setSelectedProfileId('');
@@ -281,7 +286,11 @@ export function DevicesPage() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => clear()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                clearSelection();
+              }}
             >
               Limpar seleção
             </Button>
@@ -410,8 +419,8 @@ export function DevicesPage() {
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={() => {
-                      if (allSelected) clear();
-                      else selectAll(devices.map((d) => d.id));
+                      if (allSelected) clearSelection();
+                      else selectAllVisible(devices.map((d) => d.id));
                     }}
                   />
                 </th>
@@ -443,7 +452,7 @@ export function DevicesPage() {
                       <td className="p-3">
                         <Checkbox
                           checked={isSelected(device.id)}
-                          onCheckedChange={() => toggle(device.id)}
+                          onCheckedChange={() => toggleSelection(device.id)}
                         />
                       </td>
                       <td className="p-3">
