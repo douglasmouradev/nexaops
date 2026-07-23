@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
-  <?define ProductVersion="0.3.0.0" ?>
+  <?define ProductVersion="0.3.1.0" ?>
   <?define UpgradeCode="B7E4A1C2-3D5F-4E89-9A0B-1C2D3E4F5A6B" ?>
+
+  <!-- Defaults injetados no build (build-msi.ps1 -dBakeToken / -dBakeApiUrl).
+       Duplo clique no MSI já configura e inicia o agent sem msiexec manual. -->
+  <?ifndef BakeToken ?>
+    <?define BakeToken=""?>
+  <?endif?>
+  <?ifndef BakeApiUrl ?>
+    <?define BakeApiUrl="https://nexaops.tdesksolutions.com.br"?>
+  <?endif?>
 
   <Product
     Id="*"
@@ -26,9 +35,9 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- msiexec /i NexaOpsAgent.msi TOKEN=xxx API_URL=https://nexaops.exemplo.com -->
-    <Property Id="TOKEN" Secure="yes" />
-    <Property Id="API_URL" Value="https://nexaops.tdesksolutions.com.br" />
+    <!-- Valores padrao vêm do build; msiexec TOKEN=/API_URL= ainda sobrescrevem -->
+    <Property Id="TOKEN" Secure="yes" Value="$(var.BakeToken)" />
+    <Property Id="API_URL" Value="$(var.BakeApiUrl)" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
@@ -40,7 +49,6 @@
       <ComponentGroupRef Id="AgentFiles" />
     </Feature>
 
-    <!-- Expande TOKEN/API_URL no comando (immediate) e executa como SYSTEM (deferred) -->
     <CustomAction
       Id="SetInstallCmd"
       Property="InstallService"
@@ -70,7 +78,6 @@
       Impersonate="no" />
 
     <InstallExecuteSequence>
-      <!-- Roda em install e upgrade quando TOKEN foi passado -->
       <Custom Action="SetInstallCmd" Before="InstallService">TOKEN AND NOT REMOVE~="ALL"</Custom>
       <Custom Action="InstallService" After="InstallFiles">TOKEN AND NOT REMOVE~="ALL"</Custom>
       <Custom Action="SetUninstallCmd" Before="UninstallService">REMOVE="ALL"</Custom>

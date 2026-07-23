@@ -1,8 +1,14 @@
 # Compila NexaOpsAgent.msi (requer WiX Toolset v3.14+)
-# Uso: .\build-msi.ps1 [-NodeVersion "20.18.0"]
+# Uso:
+#   $env:AGENT_TOKEN="seu_token"
+#   $env:API_URL="https://nexaops.tdesksolutions.com.br"
+#   .\build-msi.ps1
+# Ou: .\build-msi.ps1 -AgentToken "..." -ApiUrl "https://..."
 
 param(
-    [string]$NodeVersion = "20.18.0"
+    [string]$NodeVersion = "20.18.0",
+    [string]$AgentToken = $env:AGENT_TOKEN,
+    [string]$ApiUrl = $(if ($env:API_URL) { $env:API_URL } else { "https://nexaops.tdesksolutions.com.br" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +21,19 @@ $FilesWxs = Join-Path $Root "Files.wxs"
 
 Write-Host "=== NexaOps Agent MSI Builder ===" -ForegroundColor Cyan
 
-# Localizar WiX Toolset (portable local > instalacao do sistema)
+if ([string]::IsNullOrWhiteSpace($AgentToken)) {
+    Write-Host ""
+    Write-Host "AVISO: AGENT_TOKEN / -AgentToken nao definido." -ForegroundColor Yellow
+    Write-Host "O MSI NAO iniciara o agent no duplo clique (so copia arquivos)." -ForegroundColor Yellow
+    Write-Host "Exemplo:" -ForegroundColor Yellow
+    Write-Host '  $env:AGENT_TOKEN="seu_token"; $env:API_URL="https://nexaops.tdesksolutions.com.br"; npm run build:agent-msi' -ForegroundColor DarkGray
+    Write-Host ""
+} else {
+    $preview = $AgentToken.Substring(0, [Math]::Min(8, $AgentToken.Length))
+    Write-Host "Bake TOKEN: $preview... (embutido no MSI)" -ForegroundColor Green
+    Write-Host "Bake API_URL: $ApiUrl" -ForegroundColor Green
+}
+
 $LocalWix = Join-Path $Root "tools\wix"
 $WixPaths = @(
     $LocalWix,
@@ -29,24 +47,20 @@ if (-not $WixBin) {
     Write-Host ""
     Write-Host "WiX Toolset nao encontrado." -ForegroundColor Red
     Write-Host "Execute: npm run install:wix" -ForegroundColor Yellow
-    Write-Host "Ou instale: winget install WiXToolset.WiXToolset (admin)" -ForegroundColor Yellow
     exit 1
 }
 
 Write-Host "WiX: $WixBin"
 
-# Preparar staging
 if (Test-Path $Staging) { Remove-Item $Staging -Recurse -Force }
 New-Item -ItemType Directory -Path $Staging | Out-Null
 New-Item -ItemType Directory -Path $Dist -Force | Out-Null
 New-Item -ItemType Directory -Path $Obj -Force | Out-Null
 
-# Copiar arquivos do agente
 Copy-Item (Join-Path $AgentRoot "index.js") $Staging
 Copy-Item (Join-Path $AgentRoot "lib") (Join-Path $Staging "lib") -Recurse
 Copy-Item (Join-Path $AgentRoot "windows") (Join-Path $Staging "windows") -Recurse
 
-# Baixar Node.js portable (win-x64)
 $NodeZip = Join-Path $env:TEMP "node-v$NodeVersion-win-x64.zip"
 $NodeExtract = Join-Path $env:TEMP "node-v$NodeVersion-win-x64"
 $NodeUrl = "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-x64.zip"
@@ -61,7 +75,6 @@ if (-not (Test-Path (Join-Path $NodeExtract "node.exe"))) {
 Copy-Item (Join-Path $NodeExtract "node.exe") (Join-Path $Staging "node.exe") -Force
 Write-Host "node.exe incluido ($('{0:N1}' -f ((Get-Item (Join-Path $Staging 'node.exe')).Length / 1MB)) MB)"
 
-# Gerar fragmento de arquivos com heat.exe
 & "$WixBin\heat.exe" dir $Staging `
     -cg AgentFiles `
     -gg -sfrag -srd `
@@ -72,13 +85,14 @@ Write-Host "node.exe incluido ($('{0:N1}' -f ((Get-Item (Join-Path $Staging 'nod
 
 if ($LASTEXITCODE -ne 0) { throw "heat.exe falhou" }
 
-# Compilar
 Write-Host "Compilando MSI..."
 & "$WixBin\candle.exe" `
     (Join-Path $Root "NexaOpsAgent.wxs") `
     $FilesWxs `
     -ext WixUtilExtension `
     "-dStagingDir=$Staging" `
+    "-dBakeToken=$AgentToken" `
+    "-dBakeApiUrl=$ApiUrl" `
     -out "$Obj\"
 
 if ($LASTEXITCODE -ne 0) { throw "candle.exe falhou" }
@@ -100,24 +114,21 @@ Write-Host ""
 Write-Host "MSI gerado com sucesso!" -ForegroundColor Green
 Write-Host "  Arquivo: $MsiOut ($SizeMb MB)"
 
-# Assinatura opcional (Authenticode) — reduz SmartScreen
 $SignScript = Join-Path $Root "sign-msi.ps1"
 if ($env:CODE_SIGN_PFX_PATH -or $env:CODE_SIGN_THUMBPRINT) {
     Write-Host ""
     Write-Host "Assinando MSI..." -ForegroundColor Cyan
     & $SignScript -MsiPath $MsiOut
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Aviso: assinatura falhou (MSI ainda utilizavel, SmartScreen pode alertar)." -ForegroundColor Yellow
-    }
 } else {
     Write-Host ""
-    Write-Host "MSI nao assinado (defina CODE_SIGN_PFX_PATH ou CODE_SIGN_THUMBPRINT para assinar)." -ForegroundColor Yellow
-    Write-Host "  .\sign-msi.ps1" -ForegroundColor DarkGray
+    Write-Host "MSI nao assinado (opcional: CODE_SIGN_PFX_PATH)." -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Instalar (admin):" -ForegroundColor Cyan
-Write-Host '  msiexec /i dist\NexaOpsAgent.msi TOKEN=SEU_TOKEN API_URL=http://localhost:3001'
-Write-Host ""
-Write-Host "Instalar silencioso:" -ForegroundColor Cyan
-Write-Host '  msiexec /i dist\NexaOpsAgent.msi /qn TOKEN=SEU_TOKEN API_URL=http://localhost:3001'
+if (-not [string]::IsNullOrWhiteSpace($AgentToken)) {
+    Write-Host "Instalar em qualquer PC:" -ForegroundColor Cyan
+    Write-Host "  Botao direito no MSI > Executar como administrador" -ForegroundColor White
+    Write-Host "  (TOKEN + API ja embutidos - sem PowerShell)" -ForegroundColor DarkGray
+} else {
+    Write-Host "Rebuild com token para duplo clique automatico." -ForegroundColor Yellow
+}
