@@ -13,6 +13,7 @@ import {
   Star,
   Sparkles,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -98,7 +99,7 @@ export function DevicesPage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [page, setPage] = useState(1);
-  const [bulkDialog, setBulkDialog] = useState<'RUN_SCRIPT' | 'ASSIGN_THRESHOLD' | null>(null);
+  const [bulkDialog, setBulkDialog] = useState<'RUN_SCRIPT' | 'ASSIGN_THRESHOLD' | 'DELETE' | null>(null);
   const [selectedScriptId, setSelectedScriptId] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [aiParsePending, setAiParsePending] = useState(false);
@@ -183,8 +184,10 @@ export function DevicesPage() {
         action: body.action,
         payload: body.payload,
       }),
-    onSuccess: () => {
-      toast({ title: 'Ação em lote executada' });
+    onSuccess: (_res, vars) => {
+      toast({
+        title: vars.action === 'DELETE' ? 'Dispositivos excluídos' : 'Ação em lote executada',
+      });
       clear();
       setBulkDialog(null);
       setSelectedScriptId('');
@@ -265,6 +268,14 @@ export function DevicesPage() {
             </Button>
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setBulkDialog('ASSIGN_THRESHOLD')}>
               <Gauge className="h-3 w-3" /> Atribuir perfil de limite
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1"
+              onClick={() => setBulkDialog('DELETE')}
+            >
+              <Trash2 className="h-3 w-3" /> Excluir
             </Button>
             <Button variant="ghost" size="sm" onClick={clear}>Limpar</Button>
           </div>
@@ -503,6 +514,35 @@ export function DevicesPage() {
                             <DropdownMenuItem onClick={() => remoteSession.mutate(device.id)}>
                               Acesso remoto
                             </DropdownMenuItem>
+                            {canWrite && (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  if (
+                                    !window.confirm(
+                                      `Excluir o dispositivo "${device.name}"? Esta ação não pode ser desfeita.`
+                                    )
+                                  ) {
+                                    return;
+                                  }
+                                  api
+                                    .delete(`/api/devices/${device.id}`)
+                                    .then(() => {
+                                      toast({ title: 'Dispositivo excluído' });
+                                      queryClient.invalidateQueries({ queryKey: ['devices'] });
+                                    })
+                                    .catch((err) =>
+                                      toast({
+                                        title: 'Erro',
+                                        description: (err as Error).message,
+                                        variant: 'destructive',
+                                      })
+                                    );
+                                }}
+                              >
+                                Excluir
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -587,6 +627,30 @@ export function DevicesPage() {
               }
             >
               Atribuir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDialog === 'DELETE'} onOpenChange={(o) => !o && setBulkDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir {selectedIds.size} dispositivo(s)</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Os dispositivos selecionados serão removidos do painel. O agente no PC deixa de
+            aparecer até ser reinstalado. Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setBulkDialog(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={bulkAction.isPending}
+              onClick={() => bulkAction.mutate({ action: 'DELETE' })}
+            >
+              {bulkAction.isPending ? 'Excluindo…' : 'Excluir'}
             </Button>
           </div>
         </DialogContent>

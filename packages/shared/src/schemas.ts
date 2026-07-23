@@ -128,7 +128,7 @@ export const deviceFilterSchema = z.object({
 
 export const bulkDeviceActionSchema = z.object({
   deviceIds: z.array(z.string()).min(1),
-  action: z.enum(['RUN_SCRIPT', 'ASSIGN_AUTOMATION', 'INSTALL_SOFTWARE', 'ASSIGN_THRESHOLD']),
+  action: z.enum(['RUN_SCRIPT', 'ASSIGN_AUTOMATION', 'INSTALL_SOFTWARE', 'ASSIGN_THRESHOLD', 'DELETE']),
   payload: z.record(z.unknown()).optional(),
 });
 

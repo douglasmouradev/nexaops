@@ -282,6 +282,12 @@ export async function bulkDeviceAction(
     case 'ASSIGN_AUTOMATION':
     case 'INSTALL_SOFTWARE':
       return { action, count: deviceIds.length, status: 'queued' };
+    case 'DELETE': {
+      const result = await prisma.device.deleteMany({
+        where: { id: { in: deviceIds }, organizationId },
+      });
+      return { action, count: result.count };
+    }
     default:
       throw new Error('Ação não suportada');
   }
