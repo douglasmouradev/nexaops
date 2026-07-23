@@ -247,6 +247,7 @@ Se o web falhar em `vitest`, atualize o repo (tsconfig já exclui testes) e rode
 
 Confirme o front novo: `ls -la apps/web/dist/assets/index-*.js` e Ctrl+F5 no browser.
 
+## 11. Operação pós-deploy
 
 | Item | Ação |
 |------|------|
