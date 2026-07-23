@@ -244,9 +244,9 @@ export function DevicesPage() {
       </div>
 
       {canWrite && selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border bg-accent/50 p-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/50 p-3">
           <span className="text-sm font-medium">{selectedIds.size} selecionado(s)</span>
-          <div className="ml-auto flex gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setBulkDialog('RUN_SCRIPT')}>
               <Play className="h-3 w-3" /> Executar script
             </Button>
@@ -277,7 +277,9 @@ export function DevicesPage() {
             >
               <Trash2 className="h-3 w-3" /> Excluir
             </Button>
-            <Button variant="ghost" size="sm" onClick={clear}>Limpar</Button>
+            <Button variant="ghost" size="sm" onClick={clear}>
+              Limpar
+            </Button>
           </div>
         </div>
       )}
