@@ -136,7 +136,8 @@ async function register() {
     saveConfig({ deviceToken: res.data.deviceToken, apiUrl: API_URL, agentId, deviceId });
     log('Token por device gravado no config do agent');
   }
-  lastHardwareSync = Date.now();
+  // Força re-sync de hardware no próximo ciclo (disco via CIM pode vir 0 no 1º register)
+  lastHardwareSync = 0;
   log(`Registrado: device=${deviceId} agent=${agentId}`);
 }
 

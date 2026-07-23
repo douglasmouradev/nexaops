@@ -1,7 +1,8 @@
 /**
- * Coleta métricas reais no Windows via PowerShell/CIM.
+ * Coleta métricas reais no Windows via PowerShell/CIM + fs.statfs para disco.
  */
 const { execSync } = require('child_process');
+const fs = require('fs');
 const os = require('os');
 
 const PS = 'powershell -NoProfile -ExecutionPolicy Bypass -Command';
@@ -28,6 +29,46 @@ function runPsJson(script, timeout = 20000) {
   } catch {
     return null;
   }
+}
+
+/** Disco via Node (confiável sob SYSTEM; evita falha do CIM no serviço/tarefa). */
+function getDiskStatsFromFs(roots = ['C:\\']) {
+  const disks = [];
+  for (const root of roots) {
+    try {
+      if (typeof fs.statfsSync !== 'function') break;
+      const s = fs.statfsSync(root);
+      const bsize = Number(s.bsize) || 0;
+      const blocks = Number(s.blocks) || 0;
+      const bavail = Number(s.bavail ?? s.bfree) || 0;
+      const totalBytes = bsize * blocks;
+      const freeBytes = bsize * bavail;
+      if (totalBytes <= 0) continue;
+      const totalGb = Math.round((totalBytes / 1024 / 1024 / 1024) * 10) / 10;
+      const freeGb = Math.round((freeBytes / 1024 / 1024 / 1024) * 10) / 10;
+      const usedPercent =
+        totalGb > 0 ? Math.round(((totalGb - freeGb) / totalGb) * 1000) / 10 : 0;
+      const id = root.replace(/\\+$/, '') || root;
+      disks.push({
+        DeviceID: id.endsWith(':') ? id : `${id}:`,
+        totalGb,
+        freeGb,
+        usedPercent,
+      });
+    } catch {
+      /* tenta próximo */
+    }
+  }
+  if (disks.length === 0) {
+    return { diskPercent: 0, diskTotalGb: 0, diskFreeGb: 0, disks: [] };
+  }
+  const primary = disks.find((d) => d.DeviceID === 'C:') || disks[0];
+  return {
+    diskPercent: primary.usedPercent || 0,
+    diskTotalGb: disks.reduce((s, d) => s + (d.totalGb || 0), 0),
+    diskFreeGb: disks.reduce((s, d) => s + (d.freeGb || 0), 0),
+    disks,
+  };
 }
 
 let lastCpuSample = null;
@@ -60,14 +101,14 @@ function getCpuPercent() {
 }
 
 function getDiskStats() {
-  const data = runPsJson(`
-    Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" |
-      Select-Object DeviceID,
-        @{N='totalGb';E={[math]::Round($_.Size/1GB,1)}},
-        @{N='freeGb';E={[math]::Round($_.FreeSpace/1GB,1)}},
-        @{N='usedPercent';E={if($_.Size -gt 0){[math]::Round((($_.Size-$_.FreeSpace)/$_.Size)*100,1)}else{0}}} |
-      ConvertTo-Json -Compress
-  `);
+  // 1) Preferir fs.statfs (Node 18.15+ / 20) — funciona como SYSTEM
+  const fromFs = getDiskStatsFromFs(['C:\\']);
+  if (fromFs.diskTotalGb > 0) return fromFs;
+
+  // 2) Fallback CIM (pode falhar sob SYSTEM / quoting)
+  const data = runPsJson(
+    "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | ForEach-Object { [PSCustomObject]@{ DeviceID=$_.DeviceID; totalGb=[math]::Round($_.Size/1GB,1); freeGb=[math]::Round($_.FreeSpace/1GB,1); usedPercent=if($_.Size -gt 0){[math]::Round((($_.Size-$_.FreeSpace)/$_.Size)*100,1)}else{0} } } | ConvertTo-Json -Compress"
+  );
 
   const disks = Array.isArray(data) ? data : data ? [data] : [];
   if (disks.length === 0) {
@@ -75,11 +116,11 @@ function getDiskStats() {
   }
 
   const primary = disks.find((d) => d.DeviceID === 'C:') || disks[0];
-  const totalGb = disks.reduce((s, d) => s + (d.totalGb || 0), 0);
-  const freeGb = disks.reduce((s, d) => s + (d.freeGb || 0), 0);
+  const totalGb = disks.reduce((s, d) => s + (Number(d.totalGb) || 0), 0);
+  const freeGb = disks.reduce((s, d) => s + (Number(d.freeGb) || 0), 0);
 
   return {
-    diskPercent: primary.usedPercent || 0,
+    diskPercent: Number(primary.usedPercent) || 0,
     diskTotalGb: totalGb,
     diskFreeGb: freeGb,
     disks,
