@@ -1,4 +1,5 @@
 # Configura o NexaOps Agent para iniciar automaticamente (tarefa SYSTEM).
+# ASCII-only: PowerShell 5.1 sem BOM quebra com caracteres UTF-8.
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallFolder,
@@ -46,7 +47,6 @@ try {
     )
     Write-InstallLog "config.json gravado"
 
-    # Remove servico legado
     $svc = Get-Service -Name $LegacyService -ErrorAction SilentlyContinue
     if ($svc) {
         Write-InstallLog "Removendo servico legado..."
@@ -59,14 +59,12 @@ try {
         Where-Object { $_.CommandLine -and $_.CommandLine -like '*NexaOps*' } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-    # Remove tarefa antiga
     cmd.exe /c "schtasks /Delete /TN `"$TaskName`" /F" 2>$null | Out-Null
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
     $tr = "`"$NodeExe`" `"$Script`""
     $created = $false
 
-    # 1) API moderna
     try {
         $action = New-ScheduledTaskAction -Execute $NodeExe -Argument "`"$Script`"" -WorkingDirectory $InstallFolder
         $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -76,10 +74,10 @@ try {
         $created = $true
         Write-InstallLog "Tarefa criada via Register-ScheduledTask"
     } catch {
-        Write-InstallLog ("Register-ScheduledTask falhou: {0}" -f $_.Exception.Message)
+        $msg = $_.Exception.Message
+        Write-InstallLog "Register-ScheduledTask falhou: $msg"
     }
 
-    # 2) Fallback schtasks.exe (mais compativel)
     if (-not $created) {
         $cmd = "schtasks /Create /TN `"$TaskName`" /TR `"$tr`" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"
         Write-InstallLog "Fallback: $cmd"
@@ -88,7 +86,7 @@ try {
             $created = $true
             Write-InstallLog "Tarefa criada via schtasks"
         } else {
-            Write-InstallLog ("schtasks falhou codigo {0}" -f $LASTEXITCODE)
+            Write-InstallLog "schtasks falhou codigo $LASTEXITCODE"
         }
     }
 
@@ -97,15 +95,14 @@ try {
         Start-Sleep -Seconds 2
         Write-InstallLog "Tarefa iniciada"
     } else {
-        # Ultimo recurso: sobe o processo agora (nao persiste no reboot sem tarefa)
-        Write-InstallLog "AVISO: sem tarefa — iniciando processo agora"
+        Write-InstallLog "AVISO: sem tarefa - iniciando processo agora"
         Start-Process -FilePath $NodeExe -ArgumentList "`"$Script`"" -WorkingDirectory $InstallFolder -WindowStyle Hidden
     }
 
     Write-InstallLog "Instalacao automatica concluida."
     exit 0
 } catch {
-    Write-InstallLog ("ERRO: {0}" -f $_.Exception.Message)
-    # Nao derruba o MSI (arquivos ja copiados)
+    $msg = $_.Exception.Message
+    Write-InstallLog "ERRO: $msg"
     exit 0
 }
