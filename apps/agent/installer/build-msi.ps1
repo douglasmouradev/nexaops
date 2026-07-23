@@ -61,17 +61,50 @@ Copy-Item (Join-Path $AgentRoot "index.js") $Staging
 Copy-Item (Join-Path $AgentRoot "lib") (Join-Path $Staging "lib") -Recurse
 Copy-Item (Join-Path $AgentRoot "windows") (Join-Path $Staging "windows") -Recurse
 
-# socket.io-client obrigatorio para stream remoto
+# socket.io-client obrigatorio para stream remoto (no monorepo fica na raiz)
 $AgentNm = Join-Path $AgentRoot "node_modules"
+$MonoRoot = (Resolve-Path (Join-Path $AgentRoot "..\..")).Path
+$RootNm = Join-Path $MonoRoot "node_modules"
 if (-not (Test-Path (Join-Path $AgentNm "socket.io-client"))) {
-    Write-Host "Instalando deps do agent (socket.io-client)..."
+    Write-Host "Instalando deps do agent (socket.io-client nested)..."
     Push-Location $AgentRoot
-    npm install --omit=dev --no-fund --no-audit
+    npm install --omit=dev --install-strategy=nested --no-fund --no-audit
     Pop-Location
 }
-if (Test-Path (Join-Path $AgentNm "socket.io-client")) {
-    Copy-Item $AgentNm (Join-Path $Staging "node_modules") -Recurse -Force
-    Write-Host "node_modules (socket.io-client) incluido no MSI" -ForegroundColor Green
+$NmSrc = $null
+if (Test-Path (Join-Path $AgentNm "socket.io-client")) { $NmSrc = $AgentNm }
+elseif (Test-Path (Join-Path $RootNm "socket.io-client")) { $NmSrc = $RootNm }
+
+if ($NmSrc) {
+    $stagingNm = Join-Path $Staging "node_modules"
+    New-Item -ItemType Directory -Path $stagingNm -Force | Out-Null
+    # Copia pacotes necessarios ao socket.io-client (nao o node_modules inteiro da raiz)
+    $needed = @(
+        "socket.io-client",
+        "engine.io-client",
+        "socket.io-parser",
+        "engine.io-parser",
+        "@socket.io",
+        "debug",
+        "ms",
+        "ws",
+        "xmlhttprequest-ssl",
+        "yeast",
+        "component-emitter",
+        "has-cors",
+        "parseuri",
+        "parseqs",
+        "backo2",
+        "to-array",
+        "undici-types"
+    )
+    foreach ($name in $needed) {
+        $src = Join-Path $NmSrc $name
+        if (Test-Path $src) {
+            Copy-Item $src (Join-Path $stagingNm $name) -Recurse -Force
+        }
+    }
+    Write-Host "node_modules (socket.io-client) incluido no MSI a partir de $NmSrc" -ForegroundColor Green
 } else {
     Write-Host "AVISO: socket.io-client ausente - stream remoto pode falhar" -ForegroundColor Yellow
 }
