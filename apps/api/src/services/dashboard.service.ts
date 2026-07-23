@@ -9,7 +9,7 @@ async function computeDashboardStats(
   organizationId: string,
   siteFilter: { siteId?: { in: string[] } } = {}
 ) {
-  const deviceWhere = { organizationId, deletedAt: null, ...siteFilter };
+  const deviceWhere = { organizationId, ...siteFilter };
   const ticketWhere = { organizationId, ...siteFilter };
   const patchWhere = {
     organizationId,

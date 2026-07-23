@@ -63,21 +63,8 @@ router.post('/register', registerLimiter, async (req: Request, res: Response) =>
     }
 
     const existing = await prisma.device.findFirst({
-      where: { organizationId: org.id, hostname: name, deletedAt: null },
+      where: { organizationId: org.id, hostname: name },
     });
-
-    const revoked = await prisma.device.findFirst({
-      where: { organizationId: org.id, hostname: name, deletedAt: { not: null } },
-      orderBy: { deletedAt: 'desc' },
-    });
-    if (revoked && !existing) {
-      res.status(403).json({
-        success: false,
-        error:
-          'Este dispositivo foi removido do painel NexaOps. Desinstale o agent neste PC ou peça ao admin para restaurá-lo.',
-      });
-      return;
-    }
 
     let device;
     if (existing) {

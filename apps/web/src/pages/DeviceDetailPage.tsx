@@ -1,12 +1,15 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Monitor, Cpu, HardDrive, MemoryStick, Network, Wifi, WifiOff } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { ArrowLeft, Monitor, Cpu, HardDrive, MemoryStick, Network, Wifi, WifiOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { formatDate, formatRelative } from '@/lib/utils';
+import { useCanWrite } from '@/hooks/use-permissions';
+import { useToast } from '@/hooks/use-toast';
 import {
   LineChart,
   Line,
@@ -22,6 +25,10 @@ import { chartTooltipStyle } from '@/components/charts/ChartTooltip';
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const canWrite = useCanWrite();
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['device', id],
@@ -66,7 +73,7 @@ export function DeviceDetailPage() {
         <Button variant="ghost" size="icon" onClick={() => navigate('/devices')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">{device.name as string}</h1>
             <Badge variant={device.status === 'ONLINE' ? 'success' : 'destructive'}>
@@ -81,6 +88,39 @@ export function DeviceDetailPage() {
             {hw?.serialNumber ? ` · S/N: ${hw.serialNumber}` : ''}
           </p>
         </div>
+        {canWrite && (
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-1 shrink-0"
+            disabled={deleting}
+            onClick={() => {
+              const name = device.name as string;
+              if (!window.confirm(`Excluir o dispositivo "${name}"?\n\nEle sera removido do painel.`)) {
+                return;
+              }
+              setDeleting(true);
+              api
+                .delete(`/api/devices/${id}`)
+                .then(() => {
+                  toast({ title: 'Dispositivo excluído', description: name });
+                  queryClient.invalidateQueries({ queryKey: ['devices'] });
+                  navigate('/devices');
+                })
+                .catch((err) =>
+                  toast({
+                    title: 'Erro ao excluir',
+                    description: (err as Error).message,
+                    variant: 'destructive',
+                  })
+                )
+                .finally(() => setDeleting(false));
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

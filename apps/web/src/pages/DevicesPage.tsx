@@ -108,6 +108,7 @@ export function DevicesPage() {
   const { toast } = useToast();
   const canWrite = useCanWrite();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const clearSelection = () => setSelectedIds([]);
   const toggleSelection = (id: string) =>
@@ -481,6 +482,7 @@ export function DevicesPage() {
                 <th className="p-3 text-left font-medium">Patches</th>
                 <th className="p-3 text-left font-medium">Reinício</th>
                 <th className="p-3 text-left font-medium">Remoto</th>
+                {canWrite && <th className="p-3 text-left font-medium">Ações</th>}
                 <th className="w-10 p-3"></th>
               </tr>
             </thead>
@@ -488,7 +490,7 @@ export function DevicesPage() {
               {isLoading
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="border-b">
-                      <td colSpan={12} className="p-3"><Skeleton className="h-8" /></td>
+                      <td colSpan={canWrite ? 13 : 12} className="p-3"><Skeleton className="h-8" /></td>
                     </tr>
                   ))
                 : devices.map((device) => (
@@ -559,9 +561,50 @@ export function DevicesPage() {
                           className="h-7 w-7"
                           onClick={() => remoteSession.mutate(device.id)}
                           disabled={device.status !== 'ONLINE'}
+                          title="Acesso remoto"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
+                      </td>
+                      <td className="p-3">
+                        {canWrite && (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="h-7 gap-1 px-2"
+                            disabled={deletingId === device.id}
+                            title="Excluir dispositivo"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Excluir o dispositivo "${device.name}"?\n\nEle sera removido do painel.`
+                                )
+                              ) {
+                                return;
+                              }
+                              setDeletingId(device.id);
+                              api
+                                .delete(`/api/devices/${device.id}`)
+                                .then(() => {
+                                  toast({ title: 'Dispositivo excluído', description: device.name });
+                                  clearSelection();
+                                  queryClient.invalidateQueries({ queryKey: ['devices'] });
+                                })
+                                .catch((err) =>
+                                  toast({
+                                    title: 'Erro ao excluir',
+                                    description: (err as Error).message,
+                                    variant: 'destructive',
+                                  })
+                                )
+                                .finally(() => setDeletingId(null));
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Excluir
+                          </Button>
+                        )}
                       </td>
                       <td className="p-3">
                         <DropdownMenu>
