@@ -39,7 +39,7 @@ export async function listDevices(params: DeviceListParams) {
     sortOrder = 'desc',
   } = params;
 
-  const where: Prisma.DeviceWhereInput = { organizationId };
+  const where: Prisma.DeviceWhereInput = { organizationId, deletedAt: null };
 
   if (nlFilter) {
     const parsed = nlFilter.trim().toLowerCase().startsWith('@ai')
@@ -108,7 +108,7 @@ export async function listDevices(params: DeviceListParams) {
 
 export async function getDevice(id: string, organizationId: string) {
   const device = await prisma.device.findFirst({
-    where: { id, organizationId },
+    where: { id, organizationId, deletedAt: null },
     include: {
       site: true,
       hardwareInfo: true,
@@ -179,7 +179,7 @@ export async function updateDevice(
   organizationId: string,
   data: Record<string, unknown>
 ) {
-  const existing = await prisma.device.findFirst({ where: { id, organizationId } });
+  const existing = await prisma.device.findFirst({ where: { id, organizationId, deletedAt: null } });
   if (!existing) throw new Error('Dispositivo não encontrado');
 
   if (data.siteId) {
@@ -212,9 +212,25 @@ export async function updateDevice(
 }
 
 export async function deleteDevice(id: string, organizationId: string) {
-  const device = await prisma.device.findFirst({ where: { id, organizationId } });
+  const device = await prisma.device.findFirst({
+    where: { id, organizationId, deletedAt: null },
+  });
   if (!device) throw new Error('Dispositivo não encontrado');
-  await prisma.device.delete({ where: { id } });
+
+  // Soft-delete: some da lista e impede o agent de reaparecer no /register
+  await prisma.$transaction(async (tx) => {
+    await tx.device.update({
+      where: { id },
+      data: {
+        favoritedBy: { set: [] },
+        deletedAt: new Date(),
+        status: 'OFFLINE',
+        agentId: null,
+        agentAuthToken: null,
+        agentVersion: null,
+      },
+    });
+  });
 }
 
 export async function bulkDeviceAction(
@@ -225,7 +241,7 @@ export async function bulkDeviceAction(
   requestedById?: string
 ) {
   const devices = await prisma.device.findMany({
-    where: { id: { in: deviceIds }, organizationId },
+    where: { id: { in: deviceIds }, organizationId, deletedAt: null },
   });
   if (devices.length !== deviceIds.length) {
     throw new Error('Um ou mais dispositivos não encontrados');
@@ -283,10 +299,12 @@ export async function bulkDeviceAction(
     case 'INSTALL_SOFTWARE':
       return { action, count: deviceIds.length, status: 'queued' };
     case 'DELETE': {
-      const result = await prisma.device.deleteMany({
-        where: { id: { in: deviceIds }, organizationId },
-      });
-      return { action, count: result.count };
+      let count = 0;
+      for (const deviceId of deviceIds) {
+        await deleteDevice(deviceId, organizationId);
+        count += 1;
+      }
+      return { action, count };
     }
     default:
       throw new Error('Ação não suportada');

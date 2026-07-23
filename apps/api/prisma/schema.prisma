@@ -227,6 +227,7 @@ model Device {
   agentAuthToken  String?      @unique
   agentVersion    String?
   meshNodeId      String?
+  deletedAt       DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -248,6 +249,7 @@ model Device {
   @@index([organizationId, siteId])
   @@index([organizationId, updatedAt])
   @@index([organizationId, patchesAvailable])
+  @@index([organizationId, deletedAt])
 }
 
 model HardwareInfo {

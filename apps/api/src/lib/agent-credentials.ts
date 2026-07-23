@@ -27,10 +27,11 @@ export async function resolveAgentAuth(
       id: true,
       organizationId: true,
       agentAuthToken: true,
+      deletedAt: true,
       organization: { select: { agentToken: true } },
     },
   });
-  if (!device) return null;
+  if (!device || device.deletedAt) return null;
 
   if (device.agentAuthToken && device.agentAuthToken === token) {
     return {

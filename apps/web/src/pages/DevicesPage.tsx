@@ -183,17 +183,32 @@ export function DevicesPage() {
   });
 
   const bulkAction = useMutation({
-    mutationFn: async (body: { action: string; payload?: Record<string, string> }) => {
+    mutationFn: async (body: {
+      action: string;
+      payload?: Record<string, string>;
+      deviceIds?: string[];
+    }) => {
       if (body.action === 'DELETE') {
-        // DELETE individual — funciona mesmo se o schema bulk antigo nao tiver DELETE
-        const ids = [...selectedIds];
+        const ids = body.deviceIds?.length ? body.deviceIds : [...selectedIds];
+        if (ids.length === 0) throw new Error('Nenhum dispositivo selecionado');
+        const errors: string[] = [];
         for (const id of ids) {
-          await api.delete(`/api/devices/${id}`);
+          try {
+            await api.delete(`/api/devices/${id}`);
+          } catch (e) {
+            errors.push(`${id}: ${(e as Error).message}`);
+          }
+        }
+        if (errors.length === ids.length) {
+          throw new Error(errors.join('; ') || 'Falha ao apagar');
+        }
+        if (errors.length > 0) {
+          throw new Error(`Alguns falharam: ${errors.join('; ')}`);
         }
         return { action: 'DELETE', count: ids.length };
       }
       return api.post('/api/devices/bulk-action', {
-        deviceIds: selectedIds,
+        deviceIds: body.deviceIds ?? selectedIds,
         action: body.action,
         payload: body.payload,
       });
@@ -201,6 +216,10 @@ export function DevicesPage() {
     onSuccess: (_res, vars) => {
       toast({
         title: vars.action === 'DELETE' ? 'Dispositivos apagados' : 'Ação em lote executada',
+        description:
+          vars.action === 'DELETE'
+            ? 'Removidos do painel. O agent no PC para de registrar até ser desinstalado.'
+            : undefined,
       });
       clearSelection();
       setBulkDialog(null);
@@ -208,7 +227,12 @@ export function DevicesPage() {
       setSelectedProfileId('');
       queryClient.invalidateQueries({ queryKey: ['devices'] });
     },
-    onError: (err) => toast({ title: 'Erro', description: (err as Error).message, variant: 'destructive' }),
+    onError: (err) =>
+      toast({
+        title: 'Erro ao apagar',
+        description: (err as Error).message,
+        variant: 'destructive',
+      }),
   });
 
   const devices = data?.data || [];
@@ -268,15 +292,17 @@ export function DevicesPage() {
               className="gap-1"
               disabled={bulkAction.isPending}
               onClick={() => {
-                const n = selectedIds.length;
+                const ids = [...selectedIds];
+                const n = ids.length;
+                if (n === 0) return;
                 if (
                   !window.confirm(
-                    `Apagar ${n} dispositivo(s) selecionado(s) do painel?\n\nEsta ação não pode ser desfeita.`
+                    `Apagar ${n} dispositivo(s) selecionado(s) do painel?\n\nEles nao voltarao enquanto o agent estiver instalado (registro bloqueado).\nEsta ação não pode ser desfeita.`
                   )
                 ) {
                   return;
                 }
-                bulkAction.mutate({ action: 'DELETE' });
+                bulkAction.mutate({ action: 'DELETE', deviceIds: ids });
               }}
             >
               <Trash2 className="h-3 w-3" />
