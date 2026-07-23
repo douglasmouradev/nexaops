@@ -155,19 +155,23 @@ export function DevicesPage() {
       const s = res.data;
       toast({
         title: 'Sessão remota iniciada',
-        description: s.connectionCommand || s.connectionUrl || 'Conectando ao dispositivo...',
+        description: s.connectionCommand || 'Abrindo viewer…',
       });
+      // Sempre viewer in-app — nunca abrir /api/... no browser (falta JWT → "Token não fornecido")
       const provider = (s.provider || 'native').toLowerCase();
-      if (provider === 'native' || provider === 'rdp' || !s.connectionUrl) {
-        navigate(`/remote-sessions?session=${encodeURIComponent(s.id)}`);
+      const url = s.connectionUrl || '';
+      const isApiUrl = url.includes('/api/');
+      const isExternalGateway =
+        !isApiUrl &&
+        ['guacamole', 'meshcentral', 'novnc', 'url'].includes(provider) &&
+        /^https?:\/\//i.test(url) &&
+        !url.includes('/remote-sessions');
+
+      if (isExternalGateway) {
+        window.open(url, '_blank', 'noopener,noreferrer');
         return;
       }
-      // Guacamole / Mesh / noVNC / URL externa
-      if (s.connectionUrl.includes('/remote-sessions')) {
-        navigate(`/remote-sessions?session=${encodeURIComponent(s.id)}`);
-      } else {
-        window.open(s.connectionUrl, '_blank');
-      }
+      navigate(`/remote-sessions?session=${encodeURIComponent(s.id)}`);
     },
     onError: (err) => toast({ title: 'Erro', description: (err as Error).message, variant: 'destructive' }),
   });
