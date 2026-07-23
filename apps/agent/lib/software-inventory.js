@@ -1,33 +1,41 @@
 /**
  * Inventário de software instalado (Windows via Registry).
  */
-const { execSync } = require('child_process');
-
-const PS = 'powershell -NoProfile -ExecutionPolicy Bypass -Command';
+const { execFileSync, execSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 function collectSoftwareWindows() {
+  const ps1 = path.join(os.tmpdir(), `nexaops-soft-${process.pid}.ps1`);
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$paths = @(
+  'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+)
+$items = foreach ($p in $paths) {
+  Get-ItemProperty $p |
+    Where-Object { $_.DisplayName -and $_.DisplayName -notmatch '^(Update for|Security Update|KB[0-9])' } |
+    Select-Object @{N='name';E={$_.DisplayName}},
+      @{N='version';E={$_.DisplayVersion}},
+      @{N='publisher';E={$_.Publisher}}
+}
+@($items | Sort-Object name -Unique | Select-Object -First 500) | ConvertTo-Json -Compress
+`;
+
   try {
-    const script = `
-      $paths = @(
-        'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-        'HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-        'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
-      )
-      $items = foreach ($p in $paths) {
-        Get-ItemProperty $p -ErrorAction SilentlyContinue |
-          Where-Object { $_.DisplayName -and $_.DisplayName -notmatch '^(Update for|Security Update|KB[0-9])' } |
-          Select-Object @{N='name';E={$_.DisplayName}},
-            @{N='version';E={$_.DisplayVersion}},
-            @{N='publisher';E={$_.Publisher}}
+    fs.writeFileSync(ps1, script, 'utf8');
+    const out = execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
+      {
+        encoding: 'utf8',
+        timeout: 90000,
+        windowsHide: true,
+        maxBuffer: 8 * 1024 * 1024,
       }
-      $items | Sort-Object name -Unique | Select-Object -First 500 |
-        ConvertTo-Json -Compress
-    `;
-    const out = execSync(`${PS} "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
-      encoding: 'utf8',
-      timeout: 60000,
-      windowsHide: true,
-    }).trim();
+    ).trim();
 
     if (!out) return [];
     const parsed = JSON.parse(out);
@@ -40,6 +48,12 @@ function collectSoftwareWindows() {
       }));
   } catch {
     return [];
+  } finally {
+    try {
+      fs.unlinkSync(ps1);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -89,10 +103,11 @@ function collectSoftwareLinux() {
 
 function collectSoftwareDarwin() {
   try {
-    const out = execSync(
-      "system_profiler SPApplicationsDataType -json 2>/dev/null",
-      { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024 }
-    );
+    const out = execSync('system_profiler SPApplicationsDataType -json 2>/dev/null', {
+      encoding: 'utf8',
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     const parsed = JSON.parse(out);
     const apps = parsed?.SPApplicationsDataType || [];
     return apps.slice(0, 500).map((a) => ({

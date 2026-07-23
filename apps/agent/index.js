@@ -353,7 +353,10 @@ async function sendInterfaces() {
 
 async function sendSoftware() {
   const items = collectSoftware();
-  if (items.length === 0) return;
+  if (items.length === 0) {
+    log('Inventário de software: 0 itens (coleta vazia ou indisponível)');
+    return;
+  }
 
   await apiPost('/api/agent/software', { agentId, items });
   lastSoftwareSync = Date.now();
