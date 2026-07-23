@@ -275,6 +275,28 @@ export function DevicesPage() {
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4" />
           </Button>
+          {canWrite && selectedIds.length > 0 && (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="gap-1"
+              disabled={bulkAction.isPending}
+              onClick={() => {
+                const ids = [...selectedIds];
+                const n = ids.length;
+                if (
+                  !window.confirm(`Excluir ${n} dispositivo(s) selecionado(s)?\n\nEsta ação não pode ser desfeita.`)
+                ) {
+                  return;
+                }
+                bulkAction.mutate({ action: 'DELETE', deviceIds: ids });
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir ({selectedIds.length})
+            </Button>
+          )}
           <Button size="sm" className="gap-1" onClick={() => setShowAgentModal(true)} disabled={!canWrite}>
             <Download className="h-4 w-4" />
             Instalar Agente
@@ -482,7 +504,7 @@ export function DevicesPage() {
                 <th className="p-3 text-left font-medium">Patches</th>
                 <th className="p-3 text-left font-medium">Reinício</th>
                 <th className="p-3 text-left font-medium">Remoto</th>
-                {canWrite && <th className="p-3 text-left font-medium">Ações</th>}
+                <th className="p-3 text-left font-medium">Excluir</th>
                 <th className="w-10 p-3"></th>
               </tr>
             </thead>
@@ -490,7 +512,7 @@ export function DevicesPage() {
               {isLoading
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="border-b">
-                      <td colSpan={canWrite ? 13 : 12} className="p-3"><Skeleton className="h-8" /></td>
+                      <td colSpan={13} className="p-3"><Skeleton className="h-8" /></td>
                     </tr>
                   ))
                 : devices.map((device) => (
@@ -567,44 +589,43 @@ export function DevicesPage() {
                         </Button>
                       </td>
                       <td className="p-3">
-                        {canWrite && (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="h-7 gap-1 px-2"
-                            disabled={deletingId === device.id}
-                            title="Excluir dispositivo"
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `Excluir o dispositivo "${device.name}"?\n\nEle sera removido do painel.`
-                                )
-                              ) {
-                                return;
-                              }
-                              setDeletingId(device.id);
-                              api
-                                .delete(`/api/devices/${device.id}`)
-                                .then(() => {
-                                  toast({ title: 'Dispositivo excluído', description: device.name });
-                                  clearSelection();
-                                  queryClient.invalidateQueries({ queryKey: ['devices'] });
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="h-7 gap-1 px-2"
+                          disabled={!canWrite || deletingId === device.id}
+                          title={canWrite ? 'Excluir dispositivo' : 'Sem permissão'}
+                          onClick={() => {
+                            if (!canWrite) return;
+                            if (
+                              !window.confirm(
+                                `Excluir o dispositivo "${device.name}"?\n\nEle sera removido do painel.`
+                              )
+                            ) {
+                              return;
+                            }
+                            setDeletingId(device.id);
+                            api
+                              .delete(`/api/devices/${device.id}`)
+                              .then(() => {
+                                toast({ title: 'Dispositivo excluído', description: device.name });
+                                clearSelection();
+                                queryClient.invalidateQueries({ queryKey: ['devices'] });
+                              })
+                              .catch((err) =>
+                                toast({
+                                  title: 'Erro ao excluir',
+                                  description: (err as Error).message,
+                                  variant: 'destructive',
                                 })
-                                .catch((err) =>
-                                  toast({
-                                    title: 'Erro ao excluir',
-                                    description: (err as Error).message,
-                                    variant: 'destructive',
-                                  })
-                                )
-                                .finally(() => setDeletingId(null));
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Excluir
-                          </Button>
-                        )}
+                              )
+                              .finally(() => setDeletingId(null));
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Excluir
+                        </Button>
                       </td>
                       <td className="p-3">
                         <DropdownMenu>
