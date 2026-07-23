@@ -228,6 +228,22 @@ SmartScreen some de verdade só com certificado de code signing (OV/EV) de uma C
 
 ## 11b. Atualizar VPS (git + PM2, sem Docker)
 
+### Front rápido (botão Excluir sem build na VPS)
+
+O repositório inclui `deploy/web/` com o front já compilado:
+
+```bash
+cd /www/wwwroot/nexaops.tdesksolutions.com.br
+git pull origin main
+bash scripts/publish-web-dist.sh
+# se o nginx aponta para outro path, copie tambem:
+# cp -a deploy/web/. /caminho/do/nginx/html/
+```
+
+Depois **Ctrl+F5** no navegador. Deve aparecer a coluna **Excluir** e o botão vermelho ao selecionar.
+
+### Build completo (API + web)
+
 ```bash
 cd /www/wwwroot/nexaops.tdesksolutions.com.br
 git pull origin main
@@ -235,17 +251,18 @@ npm ci
 npm run build -w @nexaops/shared
 cd apps/api && npx prisma generate && cd ../..
 npm run build -w @nexaops/api
-# Front: sem VITE_API_URL (usa same-origin /api via nginx)
 unset VITE_API_URL
 npm run build -w @nexaops/web
+# ou use o prebuild: bash scripts/publish-web-dist.sh
 pm2 restart nexaops-api
 pm2 save
 ```
 
 Se o build da API falhar, veja o erro completo: `npm run build -w @nexaops/api`.  
-Se o web falhar em `vitest`, atualize o repo (tsconfig já exclui testes) e rode de novo.
+Se o web falhar em `vitest`, use `bash scripts/publish-web-dist.sh`.
 
-Confirme o front novo: `ls -la apps/web/dist/assets/index-*.js` e Ctrl+F5 no browser.
+Confirme o front novo: `ls -la apps/web/dist/assets/DevicesPage*.js` (deve ser `DevicesPage-BL-wvkmx.js` ou mais recente) e Ctrl+F5 no browser.
+
 
 ## 11. Operação pós-deploy
 

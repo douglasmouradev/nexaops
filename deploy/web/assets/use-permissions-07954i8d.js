@@ -1,0 +1,1 @@
+import{u as o}from"./index-DMxWf6TD.js";function t(){const r=o(e=>{var u;return(u=e.user)==null?void 0:u.role});return r==="ADMIN"||r==="TECHNICIAN"}function n(){return o(r=>{var e;return(e=r.user)==null?void 0:e.role})==="ADMIN"}export{n as a,t as u};
