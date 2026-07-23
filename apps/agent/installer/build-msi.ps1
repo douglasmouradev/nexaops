@@ -73,7 +73,7 @@ if (Test-Path (Join-Path $AgentNm "socket.io-client")) {
     Copy-Item $AgentNm (Join-Path $Staging "node_modules") -Recurse -Force
     Write-Host "node_modules (socket.io-client) incluido no MSI" -ForegroundColor Green
 } else {
-    Write-Host "AVISO: socket.io-client ausente — stream remoto pode falhar" -ForegroundColor Yellow
+    Write-Host "AVISO: socket.io-client ausente - stream remoto pode falhar" -ForegroundColor Yellow
 }
 
 $NodeZip = Join-Path $env:TEMP "node-v$NodeVersion-win-x64.zip"
