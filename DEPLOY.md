@@ -226,7 +226,27 @@ O viewer abre iframe quando a URL permite embed. Configure o Guacamole/Mesh para
 
 SmartScreen some de verdade só com certificado de code signing (OV/EV) de uma CA (DigiCert, Sectigo, etc.). Configure `CODE_SIGN_PFX_PATH` + `CODE_SIGN_PFX_PASSWORD` e rode `npm run build:agent-msi` (ou `sign-msi.ps1`). Sem certificado, o MSI funciona mas o Windows pode avisar.
 
-## 11. Operação pós-deploy
+## 11b. Atualizar VPS (git + PM2, sem Docker)
+
+```bash
+cd /www/wwwroot/nexaops.tdesksolutions.com.br
+git pull origin main
+npm ci
+npm run build -w @nexaops/shared
+cd apps/api && npx prisma generate && cd ../..
+npm run build -w @nexaops/api
+# Front: sem VITE_API_URL (usa same-origin /api via nginx)
+unset VITE_API_URL
+npm run build -w @nexaops/web
+pm2 restart nexaops-api
+pm2 save
+```
+
+Se o build da API falhar, veja o erro completo: `npm run build -w @nexaops/api`.  
+Se o web falhar em `vitest`, atualize o repo (tsconfig já exclui testes) e rode de novo.
+
+Confirme o front novo: `ls -la apps/web/dist/assets/index-*.js` e Ctrl+F5 no browser.
+
 
 | Item | Ação |
 |------|------|
