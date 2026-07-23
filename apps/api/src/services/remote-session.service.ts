@@ -5,16 +5,26 @@ import { logger } from '../lib/logger.js';
 import { appendRemoteAudit } from '../lib/ops.js';
 import { applyRemoteUrlTemplate, signRemoteAccess } from '../lib/remote-url.js';
 
-export type RemoteProvider = 'rdp' | 'meshcentral' | 'url' | 'guacamole' | 'novnc';
+export type RemoteProvider = 'native' | 'rdp' | 'meshcentral' | 'url' | 'guacamole' | 'novnc';
 
 const ACK_TIMEOUT_MS = Number(process.env.REMOTE_SESSION_ACK_TIMEOUT_MS || 60_000);
 
 function resolveProvider(): RemoteProvider {
-  const p = (process.env.REMOTE_PROVIDER || 'rdp').toLowerCase();
-  if (['meshcentral', 'url', 'rdp', 'guacamole', 'novnc'].includes(p)) {
+  const p = (process.env.REMOTE_PROVIDER || 'native').toLowerCase();
+  if (['native', 'meshcentral', 'url', 'rdp', 'guacamole', 'novnc'].includes(p)) {
     return p as RemoteProvider;
   }
-  return 'rdp';
+  return 'native';
+}
+
+/** Base do painel web (viewer in-app). */
+function webBaseUrl(): string {
+  const raw =
+    process.env.WEB_URL ||
+    process.env.APP_URL ||
+    process.env.CORS_ORIGIN ||
+    'http://localhost:5173';
+  return raw.split(',')[0].trim().replace(/\/$/, '');
 }
 
 export async function startRemoteSession(deviceId: string, userId: string, organizationId: string) {
@@ -105,6 +115,14 @@ export async function startRemoteSession(deviceId: string, userId: string, organ
       '{apiUrl}/remote/{sessionId}?device={deviceId}&token={token}&expires={expires}';
     connectionUrl = applyRemoteUrlTemplate(tpl, vars);
     connectionCommand = `Abrir (TTL até ${expiresIso}): ${connectionUrl}`;
+  } else if (provider === 'native' || provider === 'rdp') {
+    // Stream JPEG/input via Socket.io no painel (funciona atras de NAT)
+    const web = webBaseUrl();
+    connectionUrl = `${web}/remote-sessions?session=${encodeURIComponent(session.id)}`;
+    connectionCommand =
+      provider === 'native'
+        ? `Abrir viewer NexaOps no navegador (stream nativo)`
+        : `Abrir viewer NexaOps (stream); RDP arquivo opcional em /api/devices/.../rdp`;
   } else {
     connectionCommand = `mstsc /v:${host}`;
     connectionUrl = `${apiUrl}/api/devices/${device.id}/remote-session/${session.id}/rdp`;

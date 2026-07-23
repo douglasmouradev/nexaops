@@ -157,7 +157,15 @@ export function DevicesPage() {
         title: 'Sessão remota iniciada',
         description: s.connectionCommand || s.connectionUrl || 'Conectando ao dispositivo...',
       });
-      if (s.connectionUrl) {
+      const provider = (s.provider || 'native').toLowerCase();
+      if (provider === 'native' || provider === 'rdp' || !s.connectionUrl) {
+        navigate(`/remote-sessions?session=${encodeURIComponent(s.id)}`);
+        return;
+      }
+      // Guacamole / Mesh / noVNC / URL externa
+      if (s.connectionUrl.includes('/remote-sessions')) {
+        navigate(`/remote-sessions?session=${encodeURIComponent(s.id)}`);
+      } else {
         window.open(s.connectionUrl, '_blank');
       }
     },

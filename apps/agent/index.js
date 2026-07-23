@@ -16,6 +16,12 @@ const { handleWebRtcOffer, isWrtcAvailable } = require('./lib/webrtc-session');
 const { scanSubnet } = require('./lib/network-scan');
 const { applyAgentUpdate } = require('./lib/agent-update');
 const { startScreenShare, stopScreenShare } = require('./lib/screen-share');
+const { applyRemoteInput, stopRemoteInputHost } = require('./lib/remote-input');
+const {
+  startRemoteDesktop,
+  stopRemoteDesktop,
+  sendRemoteInput,
+} = require('./lib/interactive-session');
 
 const AGENT_VERSION = '0.5.0';
 
@@ -180,7 +186,7 @@ function connectSocket() {
           await ackRemoteSession(payload.session);
         } else if (payload?.type === 'remote:end' && payload.session) {
           log(`Sessão remota encerrada pelo painel: ${payload.session.id}`);
-          stopScreenShare();
+          await cleanupRemoteSession();
         } else if (payload?.type === 'network:scan' && payload.scan) {
           await runNetworkScan(payload.scan);
         }
@@ -274,50 +280,81 @@ async function installPatches(patches) {
   await apiPost('/api/agent/patches/result', { agentId, results });
 }
 
-async function ackRemoteSession(session) {
-  log(`Sessão remota solicitada: ${session.id} (${session.provider || 'rdp'}) host=${session.host || '?'}`);
-  if (process.platform === 'win32') {
-    try {
-      const { execFile } = require('child_process');
-      execFile('cmd.exe', ['/c', 'start', '', 'ms-quick-assist:'], { windowsHide: true }, () => undefined);
-    } catch {
-      /* ignore */
+let remoteSignalHandler = null;
+let remoteInputHandler = null;
+let activeRemoteSessionId = null;
+
+async function cleanupRemoteSession() {
+  if (socket) {
+    if (remoteSignalHandler) {
+      socket.off('remote:signal', remoteSignalHandler);
+      remoteSignalHandler = null;
+    }
+    if (remoteInputHandler) {
+      socket.off('remote:input', remoteInputHandler);
+      remoteInputHandler = null;
     }
   }
+  activeRemoteSessionId = null;
+  try {
+    stopRemoteInputHost();
+  } catch (_) {}
+  await stopRemoteDesktop({ stopScreenShare });
+}
+
+async function ackRemoteSession(session) {
+  log(`Sessão remota solicitada: ${session.id} (${session.provider || 'native'}) host=${session.host || '?'}`);
+  await cleanupRemoteSession();
+
   await apiPost('/api/agent/remote-session/ack', {
     agentId,
     sessionId: session.id,
     status: 'CONNECTED',
   });
 
-  if (socket) {
-    startScreenShare(session.id, (frame) => {
-      socket.emit('remote:frame', frame);
-    });
-    const onSignal = async (payload) => {
-      if (payload?.sessionId !== session.id) return;
-      const data = payload?.data;
-      if (data?.type === 'offer') {
-        const iceServers = data.iceServers || [{ urls: 'stun:stun.l.google.com:19302' }];
-        const ok = await handleWebRtcOffer(socket, session.id, data.sdp, iceServers).catch(() => false);
-        if (!ok) {
-          log(`WebRTC: fallback JPEG (wrtc=${isWrtcAvailable() ? 'ok' : 'off'})`);
-        } else {
-          log('WebRTC: answer SDP enviada (experimental)');
-        }
+  if (!socket) return;
+
+  activeRemoteSessionId = session.id;
+  const emitFrame = (frame) => {
+    if (socket && activeRemoteSessionId) socket.emit('remote:frame', frame);
+  };
+
+  const modeInfo = await startRemoteDesktop(session.id, emitFrame, {
+    startScreenShare,
+    log,
+    logError,
+  });
+  log(`Remoto ativo mode=${modeInfo.mode}`);
+
+  remoteSignalHandler = async (payload) => {
+    if (payload?.sessionId !== session.id) return;
+    const data = payload?.data;
+    if (data?.type === 'offer') {
+      const iceServers = data.iceServers || [{ urls: 'stun:stun.l.google.com:19302' }];
+      const ok = await handleWebRtcOffer(socket, session.id, data.sdp, iceServers).catch(() => false);
+      if (!ok) {
+        log(`WebRTC: fallback JPEG (wrtc=${isWrtcAvailable() ? 'ok' : 'off'})`);
+      } else {
+        log('WebRTC: answer SDP enviada (experimental)');
       }
-    };
-    const onInput = async (payload) => {
-      if (payload?.sessionId !== session.id) return;
-      try {
-        await applyRemoteInput(payload.event || payload);
-      } catch (e) {
-        log(`remote:input erro: ${e.message}`);
+    }
+  };
+
+  remoteInputHandler = async (payload) => {
+    if (payload?.sessionId !== session.id) return;
+    try {
+      const ev = payload.event || payload;
+      const viaHelper = await sendRemoteInput(ev);
+      if (viaHelper === null) {
+        await applyRemoteInput(ev);
       }
-    };
-    socket.on('remote:signal', onSignal);
-    socket.on('remote:input', onInput);
-  }
+    } catch (e) {
+      log(`remote:input erro: ${e.message}`);
+    }
+  };
+
+  socket.on('remote:signal', remoteSignalHandler);
+  socket.on('remote:input', remoteInputHandler);
 }
 
 async function discoverPatches() {

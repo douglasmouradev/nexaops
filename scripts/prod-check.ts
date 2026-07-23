@@ -132,12 +132,14 @@ if (!has('S3_BUCKET') || !has('S3_ACCESS_KEY') || !has('S3_SECRET_KEY')) {
   ok(`S3_BUCKET=${has('S3_BUCKET')}`);
 }
 
-const remote = (has('REMOTE_PROVIDER') || 'rdp').toLowerCase();
-if (remote === 'rdp') {
+const remote = (has('REMOTE_PROVIDER') || 'native').toLowerCase();
+if (remote === 'native') {
+  ok('REMOTE_PROVIDER=native — viewer in-app (stream Socket.io)');
+} else if (remote === 'rdp') {
   if (has('ALLOW_RDP_REMOTE') === 'true') {
-    warn('REMOTE_PROVIDER=rdp com ALLOW_RDP_REMOTE=true — JPEG/RDP apenas');
+    warn('REMOTE_PROVIDER=rdp com ALLOW_RDP_REMOTE=true — stream nativo + .rdp opcional');
   } else {
-    err('REMOTE_PROVIDER=rdp — use guacamole|meshcentral|novnc ou ALLOW_RDP_REMOTE=true');
+    err('REMOTE_PROVIDER=rdp — use native|guacamole|meshcentral|novnc ou ALLOW_RDP_REMOTE=true');
   }
 } else if (remote === 'guacamole') {
   if (!has('GUACAMOLE_URL')) err('REMOTE_PROVIDER=guacamole exige GUACAMOLE_URL');
@@ -154,7 +156,7 @@ if (remote === 'rdp') {
   warn(`REMOTE_PROVIDER desconhecido: ${remote}`);
 }
 
-if (!has('REMOTE_URL_SIGNING_SECRET') && remote !== 'rdp') {
+if (!has('REMOTE_URL_SIGNING_SECRET') && remote !== 'rdp' && remote !== 'native') {
   warn('REMOTE_URL_SIGNING_SECRET ausente — URLs remotas usam JWT_SECRET (sem fallback hardcoded)');
 }
 

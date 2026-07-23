@@ -21,19 +21,20 @@ export function RemoteViewer({ sessionId, connectionUrl, canEmbedUrl }: Props) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [mode, setMode] = useState<'stream' | 'iframe' | 'webrtc'>(() =>
-    canEmbedUrl && connectionUrl ? 'iframe' : 'stream'
-  );
-  const [status, setStatus] = useState(
-    canEmbedUrl && connectionUrl ? 'Abrindo viewer externo…' : 'Conectando…'
-  );
+  const [mode, setMode] = useState<'stream' | 'iframe' | 'webrtc'>('stream');
+  const [status, setStatus] = useState('Conectando…');
   const [frames, setFrames] = useState(0);
   const [control, setControl] = useState(true);
+  const [fps, setFps] = useState(0);
+  const frameTimes = useRef<number[]>([]);
 
   useEffect(() => {
     if (canEmbedUrl && connectionUrl) {
       setMode('iframe');
       setStatus('Viewer externo (Guacamole/Mesh/noVNC)');
+    } else {
+      setMode('stream');
+      setStatus('Aguardando captura do agent…');
     }
   }, [canEmbedUrl, connectionUrl]);
 
@@ -56,6 +57,10 @@ export function RemoteViewer({ sessionId, connectionUrl, canEmbedUrl }: Props) {
       if (imgRef.current) {
         imgRef.current.src = `data:${payload.mime || 'image/jpeg'};base64,${payload.data}`;
         setFrames((n) => n + 1);
+        const now = Date.now();
+        frameTimes.current.push(now);
+        frameTimes.current = frameTimes.current.filter((t) => now - t < 1000);
+        setFps(frameTimes.current.length);
         setStatus('Stream ativo (captura do agent)');
         setMode('stream');
       }
@@ -178,7 +183,11 @@ export function RemoteViewer({ sessionId, connectionUrl, canEmbedUrl }: Props) {
           {connected ? 'Socket OK' : 'Socket off'}
         </Badge>
         <span className="text-muted-foreground">{status}</span>
-        {frames > 0 && <span className="text-muted-foreground">{frames} frames</span>}
+        {frames > 0 && (
+          <span className="text-muted-foreground">
+            {frames} frames · ~{fps} fps
+          </span>
+        )}
         <Button size="sm" variant={control ? 'default' : 'outline'} onClick={() => setControl((v) => !v)}>
           {control ? 'Controle ON' : 'Controle OFF'}
         </Button>

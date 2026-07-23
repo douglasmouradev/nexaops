@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { MonitorSmartphone, ExternalLink, Square, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDate, formatRelative } from '@/lib/utils';
@@ -45,10 +46,15 @@ const statusVariant: Record<string, 'success' | 'warning' | 'secondary' | 'destr
   FAILED: 'destructive',
 };
 
-function canEmbed(url: string | null): boolean {
+/** Iframe so para gateways externos — native/rdp usam stream Socket.io. */
+function canEmbed(url: string | null, provider?: string): boolean {
+  const p = (provider || '').toLowerCase();
+  if (p === 'native' || p === 'rdp') return false;
   if (!url) return false;
   try {
     const u = new URL(url);
+    if (u.pathname.includes('/remote-sessions')) return false;
+    if (u.pathname.includes('/rdp')) return false;
     return u.protocol === 'http:' || u.protocol === 'https:';
   } catch {
     return false;
@@ -58,6 +64,7 @@ function canEmbed(url: string | null): boolean {
 export function RemoteSessionsPage() {
   const [page, setPage] = useState(1);
   const [viewer, setViewer] = useState<RemoteSession | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
@@ -71,12 +78,35 @@ export function RemoteSessionsPage() {
       ),
   });
 
+  const sessionFromQuery = searchParams.get('session');
+
+  const { data: sessionDetail } = useQuery({
+    queryKey: ['remote-session', sessionFromQuery],
+    queryFn: () =>
+      api.get<{ success: boolean; data: RemoteSession }>(`/api/remote-sessions/${sessionFromQuery}`),
+    enabled: !!sessionFromQuery,
+    refetchInterval: (q) => {
+      const st = q.state.data?.data?.status;
+      return st === 'PENDING' ? 2000 : false;
+    },
+  });
+
+  useEffect(() => {
+    if (sessionDetail?.data) {
+      setViewer(sessionDetail.data);
+    }
+  }, [sessionDetail?.data]);
+
   const endSession = useMutation({
     mutationFn: (id: string) => api.post(`/api/remote-sessions/${id}/end`),
     onSuccess: () => {
       toast({ title: 'Sessão encerrada' });
       queryClient.invalidateQueries({ queryKey: ['remote-sessions'] });
       setViewer(null);
+      if (searchParams.get('session')) {
+        searchParams.delete('session');
+        setSearchParams(searchParams, { replace: true });
+      }
     },
     onError: (err) => toast({ title: 'Erro', description: (err as Error).message, variant: 'destructive' }),
   });
@@ -84,11 +114,19 @@ export function RemoteSessionsPage() {
   const sessions = data?.data || [];
   const meta = data?.meta;
 
+  const closeViewer = () => {
+    setViewer(null);
+    if (searchParams.get('session')) {
+      searchParams.delete('session');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Acesso remoto"
-        description="Histórico de sessões e viewer (MeshCentral / URL)"
+        description="Viewer nativo (stream) e histórico de sessões"
         icon={MonitorSmartphone}
         actions={
           <Button variant="outline" size="sm" onClick={() => refetch()}>
@@ -138,12 +176,19 @@ export function RemoteSessionsPage() {
                         {formatRelative(s.startedAt)}
                       </td>
                       <td className="p-3 text-right space-x-2">
-                        {(s.status === 'CONNECTED' || s.status === 'PENDING' || canEmbed(s.connectionUrl)) && (
-                          <Button size="sm" variant="outline" onClick={() => setViewer(s)}>
+                        {(s.status === 'CONNECTED' || s.status === 'PENDING' || canEmbed(s.connectionUrl, s.provider)) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setViewer(s);
+                              setSearchParams({ session: s.id }, { replace: true });
+                            }}
+                          >
                             Viewer
                           </Button>
                         )}
-                        {s.connectionUrl && (
+                        {s.connectionUrl && canEmbed(s.connectionUrl, s.provider) && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -193,15 +238,24 @@ export function RemoteSessionsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!viewer} onOpenChange={(o) => !o && setViewer(null)}>
+      <Dialog open={!!viewer} onOpenChange={(o) => !o && closeViewer()}>
         <DialogContent className="max-w-5xl h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>
-              Viewer — {viewer?.device.name}
-              {viewer?.connectionCommand && (
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {viewer.connectionCommand}
-                </span>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <span>Viewer — {viewer?.device.name}</span>
+              {viewer?.status === 'PENDING' && (
+                <Badge variant="warning">Aguardando agent…</Badge>
+              )}
+              {canWrite && viewer && viewer.status !== 'DISCONNECTED' && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="ml-auto"
+                  disabled={endSession.isPending}
+                  onClick={() => endSession.mutate(viewer.id)}
+                >
+                  Encerrar
+                </Button>
               )}
             </DialogTitle>
           </DialogHeader>
@@ -209,7 +263,7 @@ export function RemoteSessionsPage() {
             <RemoteViewer
               sessionId={viewer.id}
               connectionUrl={viewer.connectionUrl}
-              canEmbedUrl={canEmbed(viewer.connectionUrl)}
+              canEmbedUrl={canEmbed(viewer.connectionUrl, viewer.provider)}
             />
           )}
           {viewer?.auditEvents && viewer.auditEvents.length > 0 && (

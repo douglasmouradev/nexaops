@@ -87,7 +87,7 @@ if (isProd) {
     }
   }
 
-  const remoteProvider = (process.env.REMOTE_PROVIDER || 'rdp').toLowerCase();
+  const remoteProvider = (process.env.REMOTE_PROVIDER || 'native').toLowerCase();
   if (remoteProvider === 'guacamole' && !process.env.GUACAMOLE_URL) {
     console.error('❌ REMOTE_PROVIDER=guacamole exige GUACAMOLE_URL em production');
     process.exit(1);
@@ -100,11 +100,15 @@ if (isProd) {
     console.error('❌ REMOTE_PROVIDER=novnc exige NOVNC_URL em production');
     process.exit(1);
   }
-  if (remoteProvider === 'rdp' || !process.env.REMOTE_PROVIDER) {
+  if (remoteProvider === 'native') {
+    console.warn('ℹ️  REMOTE_PROVIDER=native — viewer in-app (stream Socket.io)');
+  } else if (remoteProvider === 'rdp') {
     if (process.env.ALLOW_RDP_REMOTE === 'true') {
-      console.warn('⚠️  REMOTE_PROVIDER=rdp com ALLOW_RDP_REMOTE=true — JPEG/RDP apenas');
+      console.warn('⚠️  REMOTE_PROVIDER=rdp com ALLOW_RDP_REMOTE=true — stream nativo + .rdp opcional');
     } else {
-      console.error('❌ Em production use REMOTE_PROVIDER=guacamole|meshcentral|novnc (ou ALLOW_RDP_REMOTE=true)');
+      console.error(
+        '❌ Em production use REMOTE_PROVIDER=native|guacamole|meshcentral|novnc (ou ALLOW_RDP_REMOTE=true)'
+      );
       process.exit(1);
     }
   }

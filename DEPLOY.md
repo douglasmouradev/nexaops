@@ -198,9 +198,19 @@ npm run prod:check -- --health https://api.seudominio.com/health
 - [ ] Backup MySQL agendado
 - [ ] MSI assinado (Authenticode)
 - [ ] S3/MinIO **obrigatório** em produção (`ALLOW_DB_ATTACHMENTS=true` só como escape)
-- [ ] Remoto via Guacamole/Mesh/noVNC (`REMOTE_PROVIDER` + URL base)
+- [ ] Remoto nativo (`REMOTE_PROVIDER=native` + agent atualizado) **ou** Guacamole/Mesh/noVNC
 
-### Remoto Guacamole / Mesh / noVNC
+### Remoto nativo (padrão recomendado — funciona atrás de NAT)
+
+```bash
+REMOTE_PROVIDER=native
+WEB_URL=https://nexaops.tdesksolutions.com.br
+# CORS_ORIGIN / APP_URL tambem servem como fallback para WEB_URL
+```
+
+O painel abre o viewer in-app (`/remote-sessions?session=…`). O agent em Session 0 sobe `windows/remote-helper.js` na sessão do usuário logado (captura + input). Requer usuário logado no Windows.
+
+### Remoto Guacamole / Mesh / noVNC (opcional)
 
 ```bash
 REMOTE_PROVIDER=guacamole
@@ -210,7 +220,7 @@ REMOTE_URL_SIGNING_SECRET=segredo-longo-diferente-do-jwt
 # Templates opcionais: {base} {node} {sessionId} {token} {expires} {hostname}
 ```
 
-O viewer abre iframe quando a URL permite embed. Configure o Guacamole/Mesh para permitir frame da origem do NexaOps (`X-Frame-Options` / CSP). Stream JPEG do agent permanece como fallback.
+O viewer abre iframe quando a URL permite embed. Configure o Guacamole/Mesh para permitir frame da origem do NexaOps (`X-Frame-Options` / CSP). Exige o PC alcançável pelo gateway (VPN/LAN) — não atravessa NAT sozinho.
 
 ### Authenticode (assinatura MSI)
 
@@ -256,7 +266,7 @@ Cron Linux (exemplo):
 - SSO Entra: código one-time (`/login?sso=entra&code=`) — sem JWT na URL
 - Org `requireTwoFactor`: API retorna `2FA_SETUP_REQUIRED` e o painel redireciona para `/settings/security`
 - `allowedSiteIds` em listagens e mutações (tickets, assets, patches, dashboard, remoto)
-- Remoto em production: exige Guacamole/Mesh/noVNC (ou `ALLOW_RDP_REMOTE=true`); senha não vai na URL
+- Remoto em production: `native` (stream in-app) ou Guacamole/Mesh/noVNC (ou `ALLOW_RDP_REMOTE=true`); senha não vai na URL
 - Vault exige `VAULT_ENCRYPTION_KEY` (fail-fast)
 - `READ_ONLY` não muta tickets/devices/scripts/integrações (`requireWrite`)
 - Seed bloqueado em production sem `ALLOW_DEMO_SEED`
