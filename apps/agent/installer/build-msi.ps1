@@ -61,6 +61,21 @@ Copy-Item (Join-Path $AgentRoot "index.js") $Staging
 Copy-Item (Join-Path $AgentRoot "lib") (Join-Path $Staging "lib") -Recurse
 Copy-Item (Join-Path $AgentRoot "windows") (Join-Path $Staging "windows") -Recurse
 
+# socket.io-client obrigatorio para stream remoto
+$AgentNm = Join-Path $AgentRoot "node_modules"
+if (-not (Test-Path (Join-Path $AgentNm "socket.io-client"))) {
+    Write-Host "Instalando deps do agent (socket.io-client)..."
+    Push-Location $AgentRoot
+    npm install --omit=dev --no-fund --no-audit
+    Pop-Location
+}
+if (Test-Path (Join-Path $AgentNm "socket.io-client")) {
+    Copy-Item $AgentNm (Join-Path $Staging "node_modules") -Recurse -Force
+    Write-Host "node_modules (socket.io-client) incluido no MSI" -ForegroundColor Green
+} else {
+    Write-Host "AVISO: socket.io-client ausente — stream remoto pode falhar" -ForegroundColor Yellow
+}
+
 $NodeZip = Join-Path $env:TEMP "node-v$NodeVersion-win-x64.zip"
 $NodeExtract = Join-Path $env:TEMP "node-v$NodeVersion-win-x64"
 $NodeUrl = "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-x64.zip"

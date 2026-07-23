@@ -231,6 +231,14 @@ async function heartbeat() {
   if (res.data?.update) {
     await applyAgentUpdate(res.data.update, { token: TOKEN, apiUrl: API_URL, log, logError });
   }
+
+  const remoteSessions = res.data?.remoteSessions || [];
+  for (const rs of remoteSessions) {
+    if (rs?.id && rs.id !== activeRemoteSessionId) {
+      log(`Heartbeat: sessao remota PENDING ${rs.id}`);
+      await ackRemoteSession(rs);
+    }
+  }
 }
 
 async function runNetworkScan(scan) {
@@ -315,8 +323,20 @@ async function ackRemoteSession(session) {
   if (!socket) return;
 
   activeRemoteSessionId = session.id;
+  let lastHttpFrameAt = 0;
   const emitFrame = (frame) => {
-    if (socket && activeRemoteSessionId) socket.emit('remote:frame', frame);
+    if (!activeRemoteSessionId) return;
+    if (socket && socket.connected) {
+      socket.emit('remote:frame', frame);
+      return;
+    }
+    // Fallback HTTP (MSI sem socket.io-client ou socket caiu)
+    const now = Date.now();
+    if (now - lastHttpFrameAt < 250) return;
+    lastHttpFrameAt = now;
+    apiPost('/api/agent/remote-session/frame', frame).catch((e) => {
+      logError(`frame HTTP: ${e.message}`);
+    });
   };
 
   const modeInfo = await startRemoteDesktop(session.id, emitFrame, {

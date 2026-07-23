@@ -46,11 +46,7 @@ export function RemoteViewer({ sessionId, connectionUrl, canEmbedUrl }: Props) {
     if (!socket || !connected) return;
 
     socket.emit('remote:join', sessionId);
-    setStatus(
-      WEBRTC_ENABLED
-        ? 'Sala remota ativa — aguardando frames / WebRTC'
-        : 'Sala remota ativa — aguardando frames'
-    );
+    setStatus('Sala remota ativa — aguardando frames do agent…');
 
     const onFrame = (payload: { sessionId?: string; mime?: string; data?: string }) => {
       if (payload.sessionId !== sessionId || !payload.data) return;
@@ -256,7 +252,9 @@ export function RemoteViewer({ sessionId, connectionUrl, canEmbedUrl }: Props) {
           />
           {frames === 0 && mode !== 'webrtc' && (
             <p className="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-white/70">
-              Aguardando captura do agent… (Windows / Linux / macOS)
+              {connected
+                ? 'Aguardando captura do agent… Confirme MSI 0.3.7+, usuario logado no Windows e Socket OK.'
+                : 'Socket desconectado — sem video ate reconectar.'}
             </p>
           )}
         </div>

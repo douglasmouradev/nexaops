@@ -489,6 +489,18 @@ protectedRouter.post('/heartbeat', async (req: AgentAuthRequest, res: Response) 
         }
       : null;
 
+    // Sessões remotas PENDING — agent pega no heartbeat se o socket falhou
+    const pendingRemote = await prisma.remoteSession.findMany({
+      where: { deviceId, status: 'PENDING' },
+      take: 3,
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        provider: true,
+        connectionUrl: true,
+      },
+    });
+
     res.json({
       success: true,
       data: {
@@ -500,6 +512,11 @@ protectedRouter.post('/heartbeat', async (req: AgentAuthRequest, res: Response) 
           maxHosts: 64,
         })),
         update,
+        remoteSessions: pendingRemote.map((s) => ({
+          id: s.id,
+          provider: s.provider,
+          connectionUrl: s.connectionUrl,
+        })),
       },
     });
   } catch (err) {
@@ -817,6 +834,46 @@ protectedRouter.post('/remote-session/ack', async (req: AgentAuthRequest, res: R
       status
     );
     res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
+
+/** Fallback HTTP para frames quando socket.io do agent falha */
+protectedRouter.post('/remote-session/frame', async (req: AgentAuthRequest, res: Response) => {
+  try {
+    const deviceId = req.agent!.deviceId;
+    const { sessionId, mime, data } = req.body as {
+      sessionId?: string;
+      mime?: string;
+      data?: string;
+    };
+    if (!sessionId || !data) {
+      res.status(400).json({ success: false, error: 'sessionId e data obrigatorios' });
+      return;
+    }
+    if (data.length > 4_000_000) {
+      res.status(413).json({ success: false, error: 'frame muito grande' });
+      return;
+    }
+    const session = await prisma.remoteSession.findFirst({
+      where: { id: sessionId, deviceId, status: { in: ['PENDING', 'CONNECTED'] } },
+      select: { id: true },
+    });
+    if (!session) {
+      res.status(404).json({ success: false, error: 'Sessão não encontrada' });
+      return;
+    }
+    const { getIo } = await import('../lib/io.js');
+    const io = getIo();
+    if (io) {
+      io.to(`remote:${sessionId}`).emit('remote:frame', {
+        sessionId,
+        mime: mime || 'image/jpeg',
+        data,
+      });
+    }
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message });
   }

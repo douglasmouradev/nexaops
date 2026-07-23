@@ -147,12 +147,16 @@ function launchHelperTask() {
   const root = installFolder();
   const nodeExe = path.join(root, 'node.exe');
   const helperJs = path.join(root, 'windows', 'remote-helper.js');
+  const launcher = path.join(root, 'windows', 'run-remote-helper.cmd');
   const user = getConsoleUsername();
+
+  const fs = require('fs');
+  const cmdBody = `@echo off\r\ncd /d "${root}"\r\n"${nodeExe}" "${helperJs}" --port=${HELPER_PORT}\r\n`;
+  fs.writeFileSync(launcher, cmdBody, 'utf8');
 
   deleteHelperTask();
 
-  // TR com aspas para paths com espaco (Program Files)
-  const tr = `"${nodeExe}" "${helperJs}" --port=${HELPER_PORT}`;
+  const tr = `"${launcher}"`;
   const args = [
     '/Create',
     '/TN',
@@ -172,7 +176,13 @@ function launchHelperTask() {
     args.push('/RU', user, '/NP');
   }
 
-  execFileSync('schtasks.exe', args, { windowsHide: true, timeout: 15000 });
+  try {
+    execFileSync('schtasks.exe', args, { windowsHide: true, timeout: 15000 });
+  } catch (e) {
+    // Sem /NP se falhar (algumas edicoes Windows)
+    const args2 = args.filter((a) => a !== '/NP');
+    execFileSync('schtasks.exe', args2, { windowsHide: true, timeout: 15000 });
+  }
   execFileSync('schtasks.exe', ['/Run', '/TN', TASK_NAME], {
     windowsHide: true,
     timeout: 15000,

@@ -11,6 +11,8 @@ export function setupSocket(httpServer: HttpServer) {
       origin: corsOriginCallback,
       credentials: true,
     },
+    // JPEG base64 de tela pode passar de 1MB
+    maxHttpBufferSize: 5e6,
   });
 
   io.use(async (socket, next) => {
