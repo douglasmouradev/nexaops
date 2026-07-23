@@ -1,5 +1,4 @@
 # Configura o NexaOps Agent para iniciar automaticamente (tarefa SYSTEM).
-# Chamado pelo MSI: install.ps1 -InstallFolder "..." -Token "..." -ApiUrl "..."
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallFolder,
@@ -10,103 +9,103 @@ param(
     [string]$ApiUrl = "https://nexaops.tdesksolutions.com.br"
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $TaskName = "NexaOpsAgent"
 $LegacyService = "NexaOpsAgent"
 $ConfigDir = Join-Path $env:ProgramData "NexaOps Agent"
 $LogFile = Join-Path $ConfigDir "install.log"
 
 function Write-InstallLog([string]$Message) {
-    $line = "[{0}] {1}" -f (Get-Date -Format "o"), $Message
-    Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    try {
+        New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+        $line = "[{0}] {1}" -f (Get-Date -Format "o"), $Message
+        Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
     Write-Host $Message
 }
 
-New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
-Write-InstallLog "Iniciando configuracao do agent..."
+try {
+    New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+    Write-InstallLog "Iniciando configuracao do agent..."
 
-$NodeExe = Join-Path $InstallFolder "node.exe"
-$Script = Join-Path $InstallFolder "index.js"
+    $NodeExe = Join-Path $InstallFolder "node.exe"
+    $Script = Join-Path $InstallFolder "index.js"
 
-if (-not (Test-Path $NodeExe)) { throw "node.exe nao encontrado em $InstallFolder" }
-if (-not (Test-Path $Script)) { throw "index.js nao encontrado em $InstallFolder" }
-if ([string]::IsNullOrWhiteSpace($Token)) { throw "TOKEN vazio — passe TOKEN= no msiexec" }
+    if (-not (Test-Path $NodeExe)) { throw "node.exe nao encontrado em $InstallFolder" }
+    if (-not (Test-Path $Script)) { throw "index.js nao encontrado em $InstallFolder" }
+    if ([string]::IsNullOrWhiteSpace($Token)) { throw "TOKEN vazio" }
 
-# config.json sem BOM (Node JSON.parse falha com BOM do Set-Content -Encoding UTF8)
-$json = @{
-    token  = $Token.Trim()
-    apiUrl = $ApiUrl.Trim().TrimEnd('/')
-} | ConvertTo-Json -Compress
-[System.IO.File]::WriteAllText(
-    (Join-Path $ConfigDir "config.json"),
-    $json,
-    [System.Text.UTF8Encoding]::new($false)
-)
-Write-InstallLog "config.json gravado (apiUrl=$ApiUrl)"
+    $json = (@{
+        token  = $Token.Trim()
+        apiUrl = $ApiUrl.Trim().TrimEnd('/')
+    } | ConvertTo-Json -Compress)
+    [System.IO.File]::WriteAllText(
+        (Join-Path $ConfigDir "config.json"),
+        $json,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    Write-InstallLog "config.json gravado"
 
-# Remove servico legado (sc/New-Service + node = erro 1053)
-$svc = Get-Service -Name $LegacyService -ErrorAction SilentlyContinue
-if ($svc) {
-    Write-InstallLog "Removendo servico legado NexaOpsAgent..."
-    if ($svc.Status -eq 'Running') {
-        Stop-Service -Name $LegacyService -Force -ErrorAction SilentlyContinue
+    # Remove servico legado
+    $svc = Get-Service -Name $LegacyService -ErrorAction SilentlyContinue
+    if ($svc) {
+        Write-InstallLog "Removendo servico legado..."
+        if ($svc.Status -eq 'Running') { Stop-Service -Name $LegacyService -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 1
+        cmd.exe /c "sc delete $LegacyService" | Out-Null
+    }
+
+    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -like '*NexaOps*' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+    # Remove tarefa antiga
+    cmd.exe /c "schtasks /Delete /TN `"$TaskName`" /F" 2>$null | Out-Null
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    $tr = "`"$NodeExe`" `"$Script`""
+    $created = $false
+
+    # 1) API moderna
+    try {
+        $action = New-ScheduledTaskAction -Execute $NodeExe -Argument "`"$Script`"" -WorkingDirectory $InstallFolder
+        $trigger = New-ScheduledTaskTrigger -AtStartup
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+        $created = $true
+        Write-InstallLog "Tarefa criada via Register-ScheduledTask"
+    } catch {
+        Write-InstallLog ("Register-ScheduledTask falhou: {0}" -f $_.Exception.Message)
+    }
+
+    # 2) Fallback schtasks.exe (mais compativel)
+    if (-not $created) {
+        $cmd = "schtasks /Create /TN `"$TaskName`" /TR `"$tr`" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"
+        Write-InstallLog "Fallback: $cmd"
+        cmd.exe /c $cmd
+        if ($LASTEXITCODE -eq 0) {
+            $created = $true
+            Write-InstallLog "Tarefa criada via schtasks"
+        } else {
+            Write-InstallLog ("schtasks falhou codigo {0}" -f $LASTEXITCODE)
+        }
+    }
+
+    if ($created) {
+        cmd.exe /c "schtasks /Run /TN `"$TaskName`"" | Out-Null
         Start-Sleep -Seconds 2
-    }
-    & sc.exe delete $LegacyService 2>$null | Out-Null
-    Start-Sleep -Seconds 2
-}
-
-# Encerra processos manuais do agent
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and ($_.CommandLine -like '*NexaOps Agent*' -or $_.CommandLine -like '*NexaOps*index.js*') } |
-    ForEach-Object {
-        Write-InstallLog ("Encerrando PID {0}" -f $_.ProcessId)
-        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        Write-InstallLog "Tarefa iniciada"
+    } else {
+        # Ultimo recurso: sobe o processo agora (nao persiste no reboot sem tarefa)
+        Write-InstallLog "AVISO: sem tarefa — iniciando processo agora"
+        Start-Process -FilePath $NodeExe -ArgumentList "`"$Script`"" -WorkingDirectory $InstallFolder -WindowStyle Hidden
     }
 
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-
-$action = New-ScheduledTaskAction `
-    -Execute $NodeExe `
-    -Argument ("`"{0}`"" -f $Script) `
-    -WorkingDirectory $InstallFolder
-
-$trigger = New-ScheduledTaskTrigger -AtStartup
-
-$settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -RestartCount 5 `
-    -RestartInterval (New-TimeSpan -Minutes 1) `
-    -ExecutionTimeLimit (New-TimeSpan -Days 3650)
-
-$principal = New-ScheduledTaskPrincipal `
-    -UserId "SYSTEM" `
-    -LogonType ServiceAccount `
-    -RunLevel Highest
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -Principal $principal `
-    -Description "NexaOps RMM Agent — monitoramento automatico" `
-    -Force | Out-Null
-
-Write-InstallLog "Tarefa agendada '$TaskName' registrada (AtStartup / SYSTEM)"
-
-Start-ScheduledTask -TaskName $TaskName
-Start-Sleep -Seconds 3
-
-$running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -like '*NexaOps*' }
-
-if ($running) {
-    Write-InstallLog ("Agent em execucao (PID {0})" -f ($running | Select-Object -First 1).ProcessId)
-} else {
-    Write-InstallLog "AVISO: processo node ainda nao visivel — verifique agent.log em alguns segundos"
+    Write-InstallLog "Instalacao automatica concluida."
+    exit 0
+} catch {
+    Write-InstallLog ("ERRO: {0}" -f $_.Exception.Message)
+    # Nao derruba o MSI (arquivos ja copiados)
+    exit 0
 }
-
-Write-InstallLog "Instalacao automatica concluida."

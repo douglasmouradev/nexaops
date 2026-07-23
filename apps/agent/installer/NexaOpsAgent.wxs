@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
-  <?define ProductVersion="0.3.1.0" ?>
+  <?define ProductVersion="0.3.2.0" ?>
   <?define UpgradeCode="B7E4A1C2-3D5F-4E89-9A0B-1C2D3E4F5A6B" ?>
 
   <!-- Defaults injetados no build (build-msi.ps1 -dBakeToken / -dBakeApiUrl).
@@ -60,7 +60,7 @@
       BinaryKey="WixCA"
       DllEntry="WixQuietExec64"
       Execute="deferred"
-      Return="check"
+      Return="ignore"
       Impersonate="no" />
 
     <CustomAction
