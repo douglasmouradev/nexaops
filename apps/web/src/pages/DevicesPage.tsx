@@ -283,7 +283,7 @@ export function DevicesPage() {
       </div>
 
       {canWrite && selectedIds.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/50 p-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
           <span className="text-sm font-medium">{selectedIds.length} selecionado(s)</span>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <Button
@@ -298,7 +298,7 @@ export function DevicesPage() {
                 if (n === 0) return;
                 if (
                   !window.confirm(
-                    `Apagar ${n} dispositivo(s) selecionado(s) do painel?\n\nEles nao voltarao enquanto o agent estiver instalado (registro bloqueado).\nEsta ação não pode ser desfeita.`
+                    `Excluir ${n} dispositivo(s) selecionado(s) do painel?\n\nEsta ação não pode ser desfeita.`
                   )
                 ) {
                   return;
@@ -306,8 +306,8 @@ export function DevicesPage() {
                 bulkAction.mutate({ action: 'DELETE', deviceIds: ids });
               }}
             >
-              <Trash2 className="h-3 w-3" />
-              {bulkAction.isPending ? 'Apagando…' : 'Apagar selecionados'}
+              <Trash2 className="h-3.5 w-3.5" />
+              {bulkAction.isPending ? 'Excluindo…' : 'Excluir'}
             </Button>
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setBulkDialog('RUN_SCRIPT')}>
               <Play className="h-3 w-3" /> Executar script
@@ -340,7 +340,7 @@ export function DevicesPage() {
                 clearSelection();
               }}
             >
-              Desmarcar
+              Limpar
             </Button>
           </div>
         </div>
