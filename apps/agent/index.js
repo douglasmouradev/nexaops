@@ -29,8 +29,10 @@ const args = Object.fromEntries(
 );
 
 const API_URL = args.api || process.env.API_URL || fileConfig.apiUrl || 'http://localhost:3001';
-/** Org token no install; após register pode virar deviceToken */
-let TOKEN = args.token || process.env.AGENT_TOKEN || fileConfig.deviceToken || fileConfig.token;
+/** Token da organização (sempre usado no /register) */
+const ORG_TOKEN = args.token || process.env.AGENT_TOKEN || fileConfig.token || null;
+/** Após register, preferir deviceToken nas demais rotas */
+let TOKEN = fileConfig.deviceToken || ORG_TOKEN;
 
 function log(message) {
   writeLog(message);
@@ -42,8 +44,13 @@ function logError(message) {
   console.error(message);
 }
 
-if (!TOKEN) {
+if (!ORG_TOKEN && !TOKEN) {
   logError('Token não configurado. Use --token=, AGENT_TOKEN ou config.json');
+  process.exit(1);
+}
+
+if (!ORG_TOKEN) {
+  logError('Token da organização ausente no config (campo "token"). Reinstale com o Agent token da org.');
   process.exit(1);
 }
 
@@ -119,8 +126,9 @@ async function apiPost(path, body, opts) {
 
 async function register() {
   const m = collectMetrics();
+  // /register exige o agentToken da ORG — nunca o deviceToken
   const res = await apiPost('/api/agent/register', {
-    token: TOKEN,
+    token: ORG_TOKEN,
     hostname: os.hostname(),
     osType: process.platform === 'win32' ? 'WINDOWS' : process.platform === 'darwin' ? 'MACOS' : 'LINUX',
     osVersion: `${os.type()} ${os.release()}`,
@@ -133,7 +141,13 @@ async function register() {
   deviceId = res.data.deviceId;
   if (res.data.deviceToken) {
     TOKEN = res.data.deviceToken;
-    saveConfig({ deviceToken: res.data.deviceToken, apiUrl: API_URL, agentId, deviceId });
+    saveConfig({
+      token: ORG_TOKEN,
+      deviceToken: res.data.deviceToken,
+      apiUrl: API_URL,
+      agentId,
+      deviceId,
+    });
     log('Token por device gravado no config do agent');
   }
   // Força re-sync de hardware no próximo ciclo (disco via CIM pode vir 0 no 1º register)
