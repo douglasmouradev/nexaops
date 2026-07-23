@@ -371,8 +371,13 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Instalando servico de monitoramento...
-msiexec /i "%TEMP%\\NexaOpsAgent.msi" TOKEN=${token} API_URL=${apiUrl}
+echo Instalando (inicio automatico no boot)...
+msiexec /i "%TEMP%\\NexaOpsAgent.msi" /qn TOKEN=${token} API_URL=${apiUrl}
+if errorlevel 1 (
+  echo Falha na instalacao. Tente como Administrador.
+  pause
+  exit /b 1
+)
 echo Concluido. O equipamento aparecera no painel em instantes.
 pause
 `;

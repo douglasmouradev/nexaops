@@ -304,7 +304,7 @@ export async function generateAgentInstall(
   const installers: Record<string, { extension: string; command: string; downloadUrl: string; silentCommand?: string; bootstrapUrl?: string }> = {
     WINDOWS: {
       extension: 'msi',
-      command: `msiexec /i NexaOpsAgent.msi TOKEN=${org.agentToken} API_URL=${apiUrl}`,
+      command: `msiexec /i NexaOpsAgent.msi /qn TOKEN=${org.agentToken} API_URL=${apiUrl}`,
       silentCommand: `msiexec /i NexaOpsAgent.msi /qn TOKEN=${org.agentToken} API_URL=${apiUrl}`,
       downloadUrl: `${apiUrl}/api/agent/download/windows?${params}`,
       bootstrapUrl: `${apiUrl}/api/agent/download/windows/bootstrap?token=${org.agentToken}&apiUrl=${encodeURIComponent(apiUrl)}`,

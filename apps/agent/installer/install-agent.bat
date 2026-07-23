@@ -19,6 +19,7 @@ if not exist "%MSI%" (
   exit /b 1
 )
 
-echo Instalando NexaOps Agent...
-msiexec /i "%MSI%" TOKEN=%TOKEN% API_URL=%API_URL%
+echo Instalando NexaOps Agent (automatico)...
+echo TOKEN e API_URL serao gravados; o agent sobe sozinho no boot.
+msiexec /i "%MSI%" /qn TOKEN=%TOKEN% API_URL=%API_URL%
 exit /b %ERRORLEVEL%

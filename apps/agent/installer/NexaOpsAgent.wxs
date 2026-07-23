@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
-  <?define ProductVersion="0.2.0.0" ?>
+  <?define ProductVersion="0.3.0.0" ?>
   <?define UpgradeCode="B7E4A1C2-3D5F-4E89-9A0B-1C2D3E4F5A6B" ?>
 
   <Product
@@ -26,9 +26,9 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Propriedades passadas via linha de comando: msiexec /i NexaOpsAgent.msi TOKEN=xxx API_URL=xxx -->
+    <!-- msiexec /i NexaOpsAgent.msi TOKEN=xxx API_URL=https://nexaops.exemplo.com -->
     <Property Id="TOKEN" Secure="yes" />
-    <Property Id="API_URL" Value="http://localhost:3001" />
+    <Property Id="API_URL" Value="https://nexaops.tdesksolutions.com.br" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
@@ -40,7 +40,7 @@
       <ComponentGroupRef Id="AgentFiles" />
     </Feature>
 
-    <!-- Instalação: registra serviço Windows -->
+    <!-- Expande TOKEN/API_URL no comando (immediate) e executa como SYSTEM (deferred) -->
     <CustomAction
       Id="SetInstallCmd"
       Property="InstallService"
@@ -50,12 +50,11 @@
     <CustomAction
       Id="InstallService"
       BinaryKey="WixCA"
-      DllEntry="WixQuietExec"
+      DllEntry="WixQuietExec64"
       Execute="deferred"
       Return="check"
       Impersonate="no" />
 
-    <!-- Desinstalação: remove serviço -->
     <CustomAction
       Id="SetUninstallCmd"
       Property="UninstallService"
@@ -65,15 +64,16 @@
     <CustomAction
       Id="UninstallService"
       BinaryKey="WixCA"
-      DllEntry="WixQuietExec"
+      DllEntry="WixQuietExec64"
       Execute="deferred"
       Return="ignore"
       Impersonate="no" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetInstallCmd" Before="InstallService" />
-      <Custom Action="InstallService" After="InstallFiles">NOT Installed AND TOKEN</Custom>
-      <Custom Action="SetUninstallCmd" Before="UninstallService" />
+      <!-- Roda em install e upgrade quando TOKEN foi passado -->
+      <Custom Action="SetInstallCmd" Before="InstallService">TOKEN AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="InstallService" After="InstallFiles">TOKEN AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="SetUninstallCmd" Before="UninstallService">REMOVE="ALL"</Custom>
       <Custom Action="UninstallService" Before="RemoveFiles">REMOVE="ALL"</Custom>
     </InstallExecuteSequence>
 
